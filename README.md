@@ -1,2 +1,2 @@
 # bevy_renet_dtls
-use dtls for renet transport.
+for using dtls for renet transport.
