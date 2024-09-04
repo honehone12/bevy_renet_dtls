@@ -35,26 +35,38 @@ pub struct DtlsClientHealth {
     pub recver: Option<anyhow::Result<()>>
 }
 
+pub enum DtlsClientTimeout {
+    Send(Bytes)
+}
+
 struct DtlsClientClose;
 
 struct DtlsClientSender {
     conn: Arc<dyn Conn + Sync + Send>,
     timeout_secs: u64,
     send_rx: TokioRx<Bytes>,
+    timeout_tx: TokioTx<DtlsClientTimeout>,
     close_rx: TokioRx<DtlsClientClose>
 }
 
 impl DtlsClientSender {
     #[inline]
     fn new(conn: Arc<dyn Conn + Send + Sync>, timeout_secs: u64)
-    -> (TokioTx<Bytes>, TokioTx<DtlsClientClose>, Self) {
+    -> (
+        TokioTx<Bytes>, 
+        TokioRx<DtlsClientTimeout>, 
+        TokioTx<DtlsClientClose>, 
+        Self
+    ) {
         let (send_tx, send_rx) = tokio_channel::<Bytes>();
+        let (timeout_tx, timeout_rx) = tokio_channel::<DtlsClientTimeout>();
         let(close_tx, close_rx) = tokio_channel::<DtlsClientClose>();
     
-        (send_tx, close_tx, Self{
+        (send_tx, timeout_rx, close_tx, Self{
             conn,
             timeout_secs,
             send_rx,
+            timeout_tx,
             close_rx,
         })
     }
@@ -97,6 +109,7 @@ pub struct DtlsClient {
     send_timeout_secs: u64,
     send_handle: Option<JoinHandle<anyhow::Result<()>>>,
     send_tx: Option<TokioTx<Bytes>>,
+    send_timeout_rx: Option<TokioRx<DtlsClientTimeout>>,
     close_send_tx: Option<TokioTx<DtlsClientClose>>,
 
     recv_handle: Option<JoinHandle<anyhow::Result<()>>>,
@@ -121,6 +134,7 @@ impl DtlsClient {
             send_timeout_secs,
             send_handle: None,
             send_tx: None,
+            send_timeout_rx: None,
             close_send_tx: None,
             
             recv_handle: None,
@@ -161,6 +175,23 @@ impl DtlsClient {
                     warn!("recv rx is closed before set to None: {e}");
                 }
                 None
+            }
+        }
+    }
+
+    pub fn timeout_check(&mut self) 
+    -> std::result::Result<(), DtlsClientTimeout> {
+        let Some(ref mut timeout_rx) = self.send_timeout_rx else {
+            return Ok(());
+        };
+
+        match timeout_rx.try_recv() {
+            Ok(t) => Err(t),
+            Err(e) => {
+                if matches!(e, TryRecvError::Disconnected) {
+                    warn!("send timeout rx is closed before set to None: {e}");
+                }
+                Ok(())
             }
         }
     }
@@ -211,7 +242,12 @@ impl DtlsClient {
     }
 
     fn start_send_loop(&mut self) -> anyhow::Result<()> {
-        let (send_tx, close_tx, sender) = DtlsClientSender::new(
+        let (
+            send_tx, 
+            timeout_rx, 
+            close_tx, 
+            sender
+        ) = DtlsClientSender::new(
             match self.conn {
                 Some(ref c) => c.clone(),
                 None => bail!("conn is none")
@@ -220,6 +256,7 @@ impl DtlsClient {
         );
 
         self.send_tx = Some(send_tx);
+        self.send_timeout_rx = Some(timeout_rx);
         self.close_send_tx = Some(close_tx);
 
         let handle = self.runtime.spawn(Self::send_loop(sender));
@@ -235,10 +272,17 @@ impl DtlsClient {
                 biased;
 
                 Some(msg) = sender.send_rx.recv() => {
-                    timeout(
+                    match timeout(
                         sender.timeout_secs(), 
                         sender.conn.send(&msg)
-                    ).await??;
+                    ).await {
+                        Ok(result) => {
+                            result?;
+                        }
+                        Err(_) => {
+                            sender.timeout_tx.send(DtlsClientTimeout::Send(msg))?;
+                        }
+                    }
                 }
                 Some(_) = sender.close_rx.recv() => break,
                 else => {
@@ -279,6 +323,7 @@ impl DtlsClient {
         }
 
         self.close_send_tx = None;
+        self.send_timeout_rx = None;
         self.send_tx = None;
     }
 
