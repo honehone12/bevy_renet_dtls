@@ -1,0 +1,359 @@
+use std::{net::IpAddr, sync::Arc, time::Duration};
+use anyhow::{anyhow, bail};
+use bevy::{
+    prelude::*, 
+    tasks::futures_lite::future
+};
+use bytes::{Bytes, BytesMut};
+use tokio::{
+    net::UdpSocket as TokioUdpSocket, 
+    runtime::{self, Runtime},
+    select,
+    sync::mpsc::{
+        unbounded_channel as tokio_channel, 
+        UnboundedSender as TokioTx,
+        UnboundedReceiver as TokioRx,
+        error::TryRecvError
+    }, 
+    task::JoinHandle,
+    time::timeout
+};
+use webrtc_dtls::conn::DTLSConn;
+use webrtc_util::Conn;
+use super::cert_option::ClientCertOption;
+
+pub struct DtlsClientConfig {
+    pub server_addr: IpAddr,
+    pub server_port: u16,
+    pub client_addr: IpAddr,
+    pub client_port: u16,
+    pub cert_option: ClientCertOption
+}
+
+pub struct DtlsClientHealth {
+    pub sender: Option<anyhow::Result<()>>,
+    pub recver: Option<anyhow::Result<()>>
+}
+
+struct DtlsClientClose;
+
+struct DtlsClientSender {
+    conn: Arc<dyn Conn + Sync + Send>,
+    timeout_secs: u64,
+    send_rx: TokioRx<Bytes>,
+    close_rx: TokioRx<DtlsClientClose>
+}
+
+impl DtlsClientSender {
+    #[inline]
+    fn new(conn: Arc<dyn Conn + Send + Sync>, timeout_secs: u64)
+    -> (TokioTx<Bytes>, TokioTx<DtlsClientClose>, Self) {
+        let (send_tx, send_rx) = tokio_channel::<Bytes>();
+        let(close_tx, close_rx) = tokio_channel::<DtlsClientClose>();
+    
+        (send_tx, close_tx, Self{
+            conn,
+            timeout_secs,
+            send_rx,
+            close_rx,
+        })
+    }
+
+    #[inline]
+    fn timeout_secs(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+}
+
+struct DtlsClientRecver {
+    conn: Arc<dyn Conn + Sync + Send>,
+    buf_size: usize,
+    recv_tx: TokioTx<Bytes>,
+    close_rx: TokioRx<DtlsClientClose>
+}
+
+impl DtlsClientRecver {
+    #[inline]
+    fn new(conn: Arc<dyn Conn + Sync + Send>, buf_size: usize)
+    -> (TokioRx<Bytes>, TokioTx<DtlsClientClose>, Self) {
+        let (recv_tx, recv_rx) = tokio_channel::<Bytes>();
+        let (close_tx, close_rx) = tokio_channel::<DtlsClientClose>();
+
+        (recv_rx, close_tx, Self{
+            conn,
+            buf_size,
+            recv_tx,
+            close_rx,
+        })
+    }
+}
+
+#[derive(Resource)]
+pub struct DtlsClient {
+    runtime: Arc<Runtime>,
+
+    conn: Option<Arc<dyn Conn + Sync + Send>>,
+
+    send_timeout_secs: u64,
+    send_handle: Option<JoinHandle<anyhow::Result<()>>>,
+    send_tx: Option<TokioTx<Bytes>>,
+    close_send_tx: Option<TokioTx<DtlsClientClose>>,
+
+    recv_handle: Option<JoinHandle<anyhow::Result<()>>>,
+    recv_buf_size: usize,
+    recv_rx: Option<TokioRx<Bytes>>,
+    close_recv_tx: Option<TokioTx<DtlsClientClose>>
+}
+
+impl DtlsClient {
+    #[inline]
+    pub fn new(recv_buf_size: usize, send_timeout_secs: u64) 
+    -> anyhow::Result<Self> {
+        let rt = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?; 
+
+        Ok(Self{
+            runtime: Arc::new(rt),
+
+            conn: None,
+            
+            send_timeout_secs,
+            send_handle: None,
+            send_tx: None,
+            close_send_tx: None,
+            
+            recv_handle: None,
+            recv_buf_size,
+            recv_rx: None,
+            close_recv_tx: None
+        })
+    }
+
+    #[inline]
+    pub fn start(&mut self, config: DtlsClientConfig) 
+    -> anyhow::Result<()> {
+        self.start_connect(config)?;
+        self.start_send_loop()?;
+        self.start_recv_loop()
+    }
+
+    pub fn send(&self, message: Bytes) -> anyhow::Result<()> {
+        let Some(ref send_tx) = self.send_tx else {
+            bail!("send tx is None");
+        };
+
+        if let Err(e) = send_tx.send(message) {
+            bail!("conn is not started or disconnected: {e}");
+        }
+        Ok(())
+    }
+
+    pub fn recv(&mut self) -> Option<Bytes> {
+        let Some(ref mut recv_rx) = self.recv_rx else {
+            return None;
+        };
+
+        match recv_rx.try_recv() {
+            Ok(b) => Some(b),
+            Err(e) => {
+                if matches!(e, TryRecvError::Disconnected) {
+                    warn!("recv rx is closed before set to None: {e}");
+                }
+                None
+            }
+        }
+    }
+
+    #[inline]
+    pub fn health_check(&mut self) -> DtlsClientHealth {
+        DtlsClientHealth{
+            sender: self.health_check_send(),
+            recver: self.health_check_recv()
+        }
+    }
+
+    #[inline]
+    pub fn close(&mut self) {
+        self.close_send_loop();
+        self.close_recv_loop();
+        self.conn = None;
+    }
+
+    fn start_connect(&mut self, config: DtlsClientConfig) 
+    -> anyhow::Result<()> {
+        let conn = future::block_on(self.runtime.spawn(
+            Self::connect(config)
+        ))??;
+        self.conn = Some(conn);
+        debug!("dtls client has connected");
+        Ok(())
+    }
+
+    async fn connect(config: DtlsClientConfig) 
+    -> anyhow::Result<Arc<impl Conn + Sync + Send>> {
+        let socket = TokioUdpSocket::bind(
+            (config.client_addr, config.client_port)
+        ).await?;
+        socket.connect(
+            (config.server_addr, config.server_port)
+        ).await?;
+        debug!("connecting to {}", config.server_addr);
+
+        let dtls_conn = DTLSConn::new(
+            Arc::new(socket), 
+            config.cert_option.to_dtls_config()?, 
+            true, 
+            None
+        ).await?;
+
+        Ok(Arc::new(dtls_conn))
+    }
+
+    fn start_send_loop(&mut self) -> anyhow::Result<()> {
+        let (send_tx, close_tx, sender) = DtlsClientSender::new(
+            match self.conn {
+                Some(ref c) => c.clone(),
+                None => bail!("conn is none")
+            },
+            self.send_timeout_secs,
+        );
+
+        self.send_tx = Some(send_tx);
+        self.close_send_tx = Some(close_tx);
+
+        let handle = self.runtime.spawn(Self::send_loop(sender));
+        self.send_handle = Some(handle);
+
+        debug!("send loop has started");
+        Ok(())
+    }
+
+    async fn send_loop(mut sender: DtlsClientSender)-> anyhow::Result<()> {
+        loop {
+            select! {
+                biased;
+
+                Some(msg) = sender.send_rx.recv() => {
+                    timeout(
+                        sender.timeout_secs(), 
+                        sender.conn.send(&msg)
+                    ).await??;
+                }
+                Some(_) = sender.close_rx.recv() => break,
+                else => {
+                    warn!("close send tx is closed before rx is closed");
+                    break;
+                }
+            }
+        }
+
+        sender.conn.close().await?;
+        debug!("dtls client send loop is closed");
+        Ok(())
+    }
+
+    fn health_check_send(&mut self) 
+    -> Option<anyhow::Result<()>> {
+        let handle_ref = self.send_handle.as_ref()?;
+
+        if !handle_ref.is_finished() {
+            return None;
+        }
+
+        let handle = self.send_handle.take()
+        .unwrap();
+        match future::block_on(handle) {
+            Ok(r) => Some(r),
+            Err(e) => Some(Err(anyhow!(e)))
+        }
+    }
+
+    fn close_send_loop(&mut self) {
+        let Some(ref close_send_tx) = self.close_send_tx else {
+            return;
+        };
+
+        if let Err(e) = close_send_tx.send(DtlsClientClose) {
+            error!("close send tx is closed before set to None: {e}");
+        }
+
+        self.close_send_tx = None;
+        self.send_tx = None;
+    }
+
+    fn start_recv_loop(&mut self) -> anyhow::Result<()> {
+        let (recv_rx, close_tx, recver) = DtlsClientRecver::new(
+            match self.conn {
+                Some(ref c) => c.clone(),
+                None => bail!("dtls conn is None")
+            },
+            self.recv_buf_size
+        );
+        self.recv_rx = Some(recv_rx);
+        self.close_recv_tx = Some(close_tx);
+
+        let handle = self.runtime.spawn(Self::recv_loop(recver));
+        self.recv_handle = Some(handle);
+
+        debug!("recv loop has started");
+        Ok(())
+    }
+
+    async fn recv_loop(mut recver: DtlsClientRecver) -> anyhow::Result<()> {
+        let mut buf = BytesMut::zeroed(recver.buf_size);
+
+        loop {
+            let n = select! {
+                biased;
+
+                result = recver.conn.recv(&mut buf) => result?,
+                Some(_) = recver.close_rx.recv() => break,
+                else => {
+                    error!("close recv tx is closed before rx is closed");
+                    break;
+                }
+            };
+
+            let receved = buf.split_to(n)
+            .freeze();
+            recver.recv_tx.send(receved)?;
+
+            buf.resize(recver.buf_size, 0);
+            debug!("received {n}bytes from");
+        }
+
+        recver.conn.close().await?;
+        debug!("dtls client recv loop is closed");
+        Ok(())
+    }
+
+    fn health_check_recv(&mut self) 
+    -> Option<anyhow::Result<()>> {
+        let handle_ref = self.recv_handle.as_ref()?;
+
+        if !handle_ref.is_finished() {
+            return None;
+        }
+
+        let handle = self.recv_handle.take()
+        .unwrap();
+        match future::block_on(handle) {
+            Ok(r) => Some(r),
+            Err(e) => Some(Err(anyhow!(e)))
+        }
+    }
+
+    fn close_recv_loop(&mut self) {
+        let Some(ref close_recv_tx) = self.close_recv_tx else {
+            return;
+        };
+
+        if let Err(e) = close_recv_tx.send(DtlsClientClose) {
+            error!("close recv tx is closed before set to None: {e}");
+        }
+
+        self.close_recv_tx = None;
+        self.recv_rx = None;   
+    }
+}
