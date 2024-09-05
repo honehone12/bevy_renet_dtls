@@ -5,7 +5,9 @@ use bevy::{
     prelude::*
 };
 use bevy_dtls::server::{
-    cert_option::ServerCertOption, dtls_server::{DtlsServer, DtlsServerConfig}, plugin::DtlsServerPlugin
+    cert_option::ServerCertOption, 
+    dtls_server::{DtlsServer, DtlsServerConfig, DtlsServerTimeout}, 
+    plugin::DtlsServerPlugin
 };
 use bytes::Bytes;
 
@@ -26,10 +28,6 @@ fn send_hellooon_system(
         Ok(_) => counter.0 += 1, 
         Err(e) => error!("{e}")
     }
-
-    // if counter.0 > 10 {
-    //     dtls_server.close_all();
-    // }
 }
 
 fn recv_hellooon_system(mut dtls_server: ResMut<DtlsServer>) {
@@ -40,6 +38,23 @@ fn recv_hellooon_system(mut dtls_server: ResMut<DtlsServer>) {
 
         let msg = String::from_utf8(bytes.to_vec()).unwrap();
         info!("message from conn: {}: {msg}", idx.index());
+    }
+}
+
+fn timeout_check_system(mut dtls_server: ResMut<DtlsServer>) {
+    loop {
+        let Err(e) = dtls_server.timeout_check() else {
+            return;
+        };
+    
+        match e {
+            DtlsServerTimeout::Send { conn_index, bytes: _ } => {
+                error!("sender: {conn_index:?} timeout, but still available to re-try");
+            }
+            DtlsServerTimeout::Recv(idx) => {
+                error!("recver: {idx:?} timeout, this is useful for impl heartbeat");
+            }
+        }
     }
 }
 
@@ -89,8 +104,8 @@ fn main() {
         },
         DtlsServerPlugin{
             buf_size: 512,
-            send_timeout_secs: 10,
-            recv_timeout_secs: Some(30)
+            send_timeout_secs: 0,
+            recv_timeout_secs: Some(10)
         }
     ))
     .add_plugins(SereverPlugin{
@@ -109,6 +124,7 @@ fn main() {
     .add_systems(Update, (
         send_hellooon_system,
         recv_hellooon_system,
+        timeout_check_system,
         health_check_system
     ))
     .run();

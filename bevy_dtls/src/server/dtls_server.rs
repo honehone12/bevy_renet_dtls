@@ -23,7 +23,7 @@ use webrtc_util::conn::{Listener, Conn};
 use bytes::{Bytes, BytesMut};
 use super::cert_option::ServerCertOption;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ConnIndex(usize);
 
 impl ConnIndex {
@@ -37,6 +37,15 @@ pub struct DtlsServerConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
     pub cert_option: ServerCertOption
+}
+
+#[derive(Debug)]
+pub enum DtlsServerTimeout {
+    Send{
+        conn_index: ConnIndex,
+        bytes: Bytes
+    },
+    Recv(ConnIndex)
 }
 
 struct DtlsServerClose;
@@ -79,6 +88,7 @@ struct DtlsServerRecver {
     timeout_secs: Option<u64>,
 
     recv_tx: TokioTx<(ConnIndex, Bytes)>,
+    timeout_tx: TokioTx<DtlsServerTimeout>,
     close_rx: TokioRx<DtlsServerClose>
 }
 
@@ -89,7 +99,8 @@ impl DtlsServerRecver {
         conn: Arc<dyn Conn + Sync + Send>,
         buf_size: usize,
         timeout_secs: Option<u64>,
-        recv_tx: TokioTx<(ConnIndex, Bytes)>
+        recv_tx: TokioTx<(ConnIndex, Bytes)>,
+        timeout_tx: TokioTx<DtlsServerTimeout>
     ) -> (TokioTx<DtlsServerClose>, Self) {
         let (close_tx, close_rx) = tokio_channel::<DtlsServerClose>();
 
@@ -99,6 +110,7 @@ impl DtlsServerRecver {
             buf_size,
             timeout_secs,
             recv_tx,
+            timeout_tx,
             close_rx,
         })
     }
@@ -118,6 +130,7 @@ struct DtlsServerSender {
     timeout_secs: u64,
 
     send_rx: TokioRx<Bytes>,
+    timeout_tx: TokioTx<DtlsServerTimeout>,
     close_rx: TokioRx<DtlsServerClose>
 }
 
@@ -126,16 +139,18 @@ impl DtlsServerSender {
     fn new(
         conn_idx: ConnIndex, 
         conn: Arc<dyn Conn + Sync + Send>,
-        timeout_secs: u64
+        timeout_secs: u64,
+        timeout_tx: TokioTx<DtlsServerTimeout>
     ) -> (TokioTx<Bytes>, TokioTx<DtlsServerClose>, Self) {
         let (send_tx, send_rx) = tokio_channel::<Bytes>();
         let (close_tx, close_rx) = tokio_channel::<DtlsServerClose>();
-
+ 
         (send_tx, close_tx, Self{
             conn_idx,
             conn,
             timeout_secs,
             send_rx,
+            timeout_tx,
             close_rx
         })
     }
@@ -188,6 +203,9 @@ pub struct DtlsServer {
     recv_timeout_secs: Option<u64>,
     recv_tx: Option<TokioTx<(ConnIndex, Bytes)>>,
     recv_rx: Option<TokioRx<(ConnIndex, Bytes)>>,
+
+    timeout_tx: Option<TokioTx<DtlsServerTimeout>>,
+    timeout_rx: Option<TokioRx<DtlsServerTimeout>>
 }
 
 impl DtlsServer {
@@ -217,6 +235,9 @@ impl DtlsServer {
             recv_buf_size,
             recv_tx: None,
             recv_rx: None,
+
+            timeout_rx: None,
+            timeout_tx: None
         })
     }
 
@@ -307,6 +328,23 @@ impl DtlsServer {
         }
     }
 
+    pub fn timeout_check(&mut self)
+    -> std::result::Result<(), DtlsServerTimeout> {
+        let Some(ref mut timeout_rx) = self.timeout_rx else {
+            return Ok(())
+        };
+
+        match timeout_rx.try_recv() {
+            Ok(t) => Err(t),
+            Err(e) => {
+                if matches!(e, TryRecvError::Disconnected) {
+                    warn!("timeout rx is closed before set to None: {e}");
+                }
+                Ok(())
+            }
+        }
+    }
+
     #[inline]
     pub fn health_check(&mut self) -> DtlsServerHealth {
         DtlsServerHealth{
@@ -352,6 +390,8 @@ impl DtlsServer {
         self.close_acpt_loop();
         self.recv_tx = None;
         self.recv_rx = None;
+        self.timeout_tx = None;
+        self.timeout_rx = None;
     }
 
     fn start_listen(&mut self, config: DtlsServerConfig) 
@@ -364,6 +404,9 @@ impl DtlsServer {
         let (recv_tx, recv_rx) = tokio_channel::<(ConnIndex, Bytes)>();
         self.recv_tx = Some(recv_tx);
         self.recv_rx = Some(recv_rx);
+        let (timeout_tx, timeout_rx) = tokio_channel::<DtlsServerTimeout>();
+        self.timeout_tx = Some(timeout_tx);
+        self.timeout_rx = Some(timeout_rx);
 
         Ok(())
     }
@@ -480,6 +523,10 @@ impl DtlsServer {
             match self.recv_tx {
                 Some(ref tx) => tx.clone(),
                 None => bail!("recv tx is still None")
+            },
+            match self.timeout_tx {
+                Some(ref tx) => tx.clone(),
+                None => bail!("timeout tx is still None")
             }
         );
 
@@ -502,7 +549,10 @@ impl DtlsServer {
 
                 result = recver.conn.recv_from(&mut buf) => result?,
                 Some(_) = recver.close_rx.recv() => break,
-                () = sleep(timeout_dur) => bail!("conn: {} recv timeout", recver.conn_idx.0),
+                () = sleep(timeout_dur) => {
+                    recver.timeout_tx.send(DtlsServerTimeout::Recv(recver.conn_idx))?;
+                    continue;
+                }
                 else => {
                     error!(
                         "close recv tx: {} is closed before rx is closed", 
@@ -569,7 +619,11 @@ impl DtlsServer {
         let (send_tx, close_tx, sender) = DtlsServerSender::new(
             conn_idx, 
             dtls_conn.conn.clone(), 
-            self.send_timeout_secs
+            self.send_timeout_secs,
+            match self.timeout_tx {
+                Some(ref tx) => tx.clone(),
+                None => bail!("timeout tx is still None")
+            }
         );
 
         dtls_conn.send_tx = Some(send_tx);
@@ -588,10 +642,20 @@ impl DtlsServer {
                 biased;
 
                 Some(msg) = sender.send_rx.recv() => {
-                    timeout(
+                    match timeout(
                         sender.timeout_secs(),
                         sender.conn.send(&msg)
-                    ).await??;
+                    ).await {
+                        Ok(result) => {
+                            result?;
+                        }
+                        Err(_) => {
+                            sender.timeout_tx.send(DtlsServerTimeout::Send { 
+                                conn_index: sender.conn_idx, 
+                                bytes: msg 
+                            })?;
+                        }
+                    }
                 }
                 Some(_) = sender.close_rx.recv() => break,
                 else => {

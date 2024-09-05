@@ -84,7 +84,11 @@ fn recv_hellooon_system(mut dtls_client: ResMut<DtlsClient>) {
 }
 
 fn timeout_check_system(mut dtls_client: ResMut<DtlsClient>) {
-    if let Err(_) = dtls_client.timeout_check() {
+    loop {
+        let Err(_) = dtls_client.timeout_check() else {
+            return;
+        };
+
         error!("sending timeout, but still available to re-try");
     }
 }
