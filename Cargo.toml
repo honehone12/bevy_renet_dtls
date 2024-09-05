@@ -2,6 +2,9 @@
 members = ["bevy_dtls", "bevy_renet_dtls"]
 resolver = "2"
 
+[workspace.dependencies]
+bevy = "0.14.1"
+
 [profile.dev]
 opt-level = 1
 
