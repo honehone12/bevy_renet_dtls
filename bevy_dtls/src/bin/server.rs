@@ -26,7 +26,7 @@ fn send_hellooon_system(
     let msg = Bytes::from(str);
     match dtls_server.broadcast(msg) {
         Ok(_) => counter.0 += 1, 
-        Err(e) => error!("{e}")
+        Err(e) => panic!("{e}")
     }
 }
 
@@ -104,7 +104,7 @@ fn main() {
         },
         DtlsServerPlugin{
             buf_size: 512,
-            send_timeout_secs: 0,
+            send_timeout_secs: 10,
             recv_timeout_secs: Some(10)
         }
     ))
