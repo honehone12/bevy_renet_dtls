@@ -104,7 +104,9 @@ impl Plugin for RenetDtlsServerPlugin {
         .add_systems(PreUpdate, (
             acpt_system,
             recv_system,
+        ))
+        .add_systems(PostUpdate,
             send_system
-        ));
+        );
     }
 }

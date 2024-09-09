@@ -7,12 +7,46 @@ use bevy::{
     log::{Level, LogPlugin}, 
     prelude::*
 };
-use bevy_renet::renet::{ConnectionConfig, RenetServer};
+use bevy_renet::renet::{ConnectionConfig, DefaultChannel, RenetServer};
 use bevy_dtls::server::{
     cert_option::ServerCertOption, 
     dtls_server::{DtlsServer, DtlsServerConfig}
 };
 use bevy_renet_dtls::server::renet_dtls_server::RenetDtlsServerPlugin;
+use bytes::Bytes;
+
+#[derive(Resource)]
+struct ServerHellooonCounter(usize);
+
+fn send_hellooon_system(
+    mut renet_server: ResMut<RenetServer>,
+    mut counter: ResMut<ServerHellooonCounter>
+) {
+    if renet_server.connected_clients() == 0 {
+        return;
+    }
+
+    let str = format!("from server helloooooon {}", counter.0);
+    let msg = Bytes::from(str);
+    renet_server.broadcast_message(DefaultChannel::ReliableOrdered, msg);
+    counter.0 += 1;
+}
+
+fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
+    let ch_len = 3_u8;
+    let clients = renet_server.clients_id();
+
+    for client_id in clients {
+        for ch in 0..ch_len {
+            let Some(bytes) = renet_server.receive_message(client_id, ch) else {
+                continue;
+            };
+
+            let msg = String::from_utf8(bytes.to_vec()).unwrap();
+            info!("message from: {client_id}: {msg}");
+        }
+    }    
+}
 
 struct ServerPlugin {
     listen_addr: IpAddr,
@@ -66,5 +100,10 @@ fn main() {
             subject_alt_name: "webrtc.rs"
         }
     })
+    .insert_resource(ServerHellooonCounter(0))
+    .add_systems(Update, (
+        recv_hellooon_system,
+        send_hellooon_system
+    ))
     .run();
 }
