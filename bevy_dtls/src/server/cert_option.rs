@@ -5,7 +5,7 @@ use webrtc_dtls::{
 };
 use crate::cert::loader;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum ServerCertOption {
     GenerateSelfSigned {
         subject_alt_name: &'static str

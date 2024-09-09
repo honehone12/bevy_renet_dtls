@@ -3,15 +3,15 @@ use rustls::crypto::aws_lc_rs;
 use super::dtls_server::*;
 
 fn accept_system(mut dtls_server: ResMut<DtlsServer>) {
-    let Some(acpted) = dtls_server.acpt() else {
+    let Some(conn_idx) = dtls_server.acpt() else {
         return;
     };
 
-    if let Err(e) = dtls_server.start_conn(acpted) {
+    if let Err(e) = dtls_server.start_conn(conn_idx) {
         panic!("{e}");
     }
 
-    debug!("conn: {} has been started from system", acpted.index());
+    debug!("conn: {} has been started from default system", conn_idx.index());
 }
 
 pub struct DtlsServerPlugin {
@@ -25,7 +25,7 @@ impl Plugin for DtlsServerPlugin {
         if aws_lc_rs::default_provider()
         .install_default()
         .is_err() {
-            panic!("failed to setup crypto provider")
+            panic!("failed to setup crypto provider");
         }
 
         let dtls_server = match DtlsServer::new(
@@ -38,6 +38,6 @@ impl Plugin for DtlsServerPlugin {
         };
 
         app.insert_resource(dtls_server)
-        .add_systems(Update, accept_system);
+        .add_systems(PreUpdate, accept_system);
     }
 }

@@ -5,10 +5,10 @@ edition = "2021"
 
 [dependencies]
 bevy = { workspace = true }
+bytes = { workspace = true }
+rustls = { workspace = true }
 anyhow = "1.0.86"
-bytes = "1.7.1"
 rcgen = "0.13.1"
-rustls = "0.23.12"
 rustls-pemfile = "2.1.3"
 tokio = { version = "1.40.0", features = ["full"] }
 webrtc-dtls = "0.10.0"

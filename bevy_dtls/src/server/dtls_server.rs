@@ -24,11 +24,11 @@ use bytes::{Bytes, BytesMut};
 use super::cert_option::ServerCertOption;
 
 #[derive(Clone, Copy, Debug)]
-pub struct ConnIndex(usize);
+pub struct ConnIndex(u64);
 
 impl ConnIndex {
     #[inline]
-    pub fn index(&self) -> usize {
+    pub fn index(&self) -> u64 {
         self.0
     }
 }
@@ -52,13 +52,13 @@ struct DtlsServerClose;
 
 pub struct DtlsServerHealth {
     pub listener: Option<anyhow::Result<()>>,
-    pub sender: Vec<(usize, anyhow::Result<()>)>,
-    pub recver: Vec<(usize, anyhow::Result<()>)>
+    pub sender: Vec<(u64, anyhow::Result<()>)>,
+    pub recver: Vec<(u64, anyhow::Result<()>)>
 }
 
 struct DtlsServerAcpter {
     listener: Arc<dyn Listener + Sync + Send>,
-    conn_map: Arc<StdRwLock<HashMap<usize, DtlsConn>>>,
+    conn_map: Arc<StdRwLock<HashMap<u64, DtlsConn>>>,
     acpt_tx:  TokioTx<ConnIndex>,
     close_rx: TokioRx<DtlsServerClose>
 }
@@ -67,7 +67,7 @@ impl DtlsServerAcpter {
     #[inline]
     fn new(
         listener: Arc<dyn Listener + Sync + Send>,
-        conn_map: Arc<StdRwLock<HashMap<usize, DtlsConn>>>
+        conn_map: Arc<StdRwLock<HashMap<u64, DtlsConn>>>
     ) -> (TokioRx<ConnIndex>, TokioTx<DtlsServerClose>, Self) {
         let (acpt_tx, acpt_rx) = tokio_channel::<ConnIndex>();
         let (close_tx, close_rx) = tokio_channel::<DtlsServerClose>();
@@ -195,7 +195,7 @@ pub struct DtlsServer {
     acpt_rx: Option<TokioRx<ConnIndex>>,
     close_acpt_tx: Option<TokioTx<DtlsServerClose>>,
     
-    conn_map: Arc<StdRwLock<HashMap<usize, DtlsConn>>>,
+    conn_map: Arc<StdRwLock<HashMap<u64, DtlsConn>>>,
 
     send_timeout_secs: u64,
 
@@ -255,13 +255,13 @@ impl DtlsServer {
     }
 
     #[inline]
-    pub(super) fn start_conn(&mut self, conn_index: ConnIndex)
+    pub fn start_conn(&mut self, conn_index: ConnIndex)
     -> anyhow::Result<()> {
         self.start_recv_loop(conn_index)?;
         self.start_send_loop(conn_index)
     }
 
-    pub(super) fn acpt(&mut self) -> Option<ConnIndex> {
+    pub fn acpt(&mut self) -> Option<ConnIndex> {
         let Some(ref mut acpt_rx) = self.acpt_rx else {
             return None;
         };
@@ -276,7 +276,7 @@ impl DtlsServer {
         }
     }
 
-    pub fn send(&self, conn_index: usize, message: Bytes) 
+    pub fn send(&self, conn_index: u64, message: Bytes) 
     -> anyhow::Result<()> {
         let r = self.conn_map.read()
         .unwrap();
@@ -354,7 +354,7 @@ impl DtlsServer {
         }
     }
 
-    pub fn close_conn(&mut self, conn_index: usize) {
+    pub fn close_conn(&mut self, conn_index: u64) {
         let mut w = self.conn_map.write()
         .unwrap();
         let Some(dtls_conn) = w.remove(&conn_index) else {
@@ -375,7 +375,7 @@ impl DtlsServer {
     }
 
     pub fn close_all(&mut self) {
-        let ks: Vec<usize> = {
+        let ks: Vec<u64> = {
             self.conn_map.read()
             .unwrap()
             .keys()
@@ -594,7 +594,7 @@ impl DtlsServer {
     }
 
     fn health_check_recv(&mut self)
-    -> Vec<(usize, anyhow::Result<()>)> {
+    -> Vec<(u64, anyhow::Result<()>)> {
         let finished = {
             let mut v = vec![];
             let mut w = self.conn_map.write()
@@ -697,7 +697,7 @@ impl DtlsServer {
     }
 
     fn health_check_send(&mut self)
-    -> Vec<(usize, anyhow::Result<()>)> {
+    -> Vec<(u64, anyhow::Result<()>)> {
         let finished = {
             let mut v = vec![];
             let mut w = self.conn_map.write()

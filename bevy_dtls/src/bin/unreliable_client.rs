@@ -104,11 +104,11 @@ fn health_check_system(mut dtls_client: ResMut<DtlsClient>) {
 }
 
 struct ClientPlugin {
-    pub server_addr: IpAddr,
-    pub server_port: u16,
-    pub client_addr: IpAddr,
-    pub client_port: u16,
-    pub cert_option: ClientCertOption
+    server_addr: IpAddr,
+    server_port: u16,
+    client_addr: IpAddr,
+    client_port: u16,
+    cert_option: ClientCertOption
 }
 
 impl Plugin for ClientPlugin {

@@ -72,9 +72,9 @@ fn health_check_system(mut dtls_server: ResMut<DtlsServer>) {
 }
 
 struct SereverPlugin {
-    pub listen_addr: IpAddr,
-    pub listen_port: u16,
-    pub cert_option: ServerCertOption
+    listen_addr: IpAddr,
+    listen_port: u16,
+    cert_option: ServerCertOption
 }
 
 impl Plugin for SereverPlugin {
@@ -85,7 +85,7 @@ impl Plugin for SereverPlugin {
         if let Err(e) = dtls_server.start(DtlsServerConfig{
             listen_addr: self.listen_addr,
             listen_port: self.listen_port,
-            cert_option: self.cert_option.clone()
+            cert_option: self.cert_option
         }) {
             panic!("{e}");
         }
