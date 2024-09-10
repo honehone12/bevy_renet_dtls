@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_renet::{renet::RenetClient, RenetClientPlugin, RenetReceive, RenetSend};
+use bevy_renet::{renet::RenetClient, RenetReceive, RenetSend};
 use bevy_dtls::client::dtls_client::DtlsClient;
 use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
@@ -54,8 +54,7 @@ impl Plugin for RenetDtlsClientPlugin {
             Err(e) => panic!("{e}")
         };
 
-        app.add_plugins(RenetClientPlugin)
-        .insert_resource(dtls_client)
+        app.insert_resource(dtls_client)
         .configure_sets(PreUpdate, DtlsSet::Recv.before(RenetReceive))
         .configure_sets(PostUpdate, DtlsSet::Send.after(RenetSend))
         .add_systems(PreUpdate, recv_system.in_set(DtlsSet::Recv))

@@ -7,7 +7,7 @@ use bevy::{
     log::{Level, LogPlugin}, 
     prelude::*
 };
-use bevy_renet::renet::{ConnectionConfig, DefaultChannel, RenetServer};
+use bevy_renet::{renet::{ConnectionConfig, DefaultChannel, RenetServer}, RenetServerPlugin};
 use bevy_dtls::server::{
     cert_option::ServerCertOption, 
     dtls_server::{DtlsServer, DtlsServerConfig}
@@ -89,6 +89,7 @@ fn main() {
             level: Level::INFO,
             ..default()
         },
+        RenetServerPlugin,
         RenetDtlsServerPlugin{
             max_clients: 1,
             buf_size: 512,

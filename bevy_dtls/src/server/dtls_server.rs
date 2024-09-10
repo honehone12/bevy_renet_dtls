@@ -476,7 +476,7 @@ impl DtlsServer {
             if acpter.conn_map.read()
             .unwrap()
             .len() >= acpter.max_clients {
-                warn!("{addr} is trying to connect, but exceeded max clients.");
+                warn!("{addr} is trying to connect, but exceeded max clients");
                 if let Err(e) = conn.close().await {
                     error!("error on disconnect {addr}: {e}");
                 }

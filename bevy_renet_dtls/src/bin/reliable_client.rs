@@ -4,7 +4,7 @@ use bevy_dtls::client::{
     cert_option::ClientCertOption, 
     dtls_client::{DtlsClient, DtlsClientConfig}
 };
-use bevy_renet::renet::{ConnectionConfig, DefaultChannel, RenetClient};
+use bevy_renet::{renet::{ConnectionConfig, DefaultChannel, RenetClient}, RenetClientPlugin};
 use bevy_renet_dtls::client::renet_dtls_client::RenetDtlsClientPlugin;
 use bytes::Bytes;
 
@@ -121,6 +121,7 @@ fn main() {
             level: Level::INFO,
             ..default()
         }),
+        RenetClientPlugin,
         RenetDtlsClientPlugin{
             timeout_secs: 10,
             buf_size: 512
