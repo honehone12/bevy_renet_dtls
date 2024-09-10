@@ -5,6 +5,7 @@ pub mod client {
     pub mod renet_dtls_client;
 }
 
+use bevy::prelude::SystemSet;
 use bevy_renet::renet::ClientId;
 use bevy_dtls::server::dtls_server::ConnIndex;
 
@@ -16,4 +17,11 @@ impl ToRenetClientId for ConnIndex {
     fn renet_client_id(&self) -> ClientId {
         ClientId::from_raw(self.index() as u64)
     }
+}
+
+#[derive(SystemSet, Eq, PartialEq, Debug, Clone, Hash)]
+pub enum DtlsSet {
+    Acpt,
+    Recv,
+    Send
 }
