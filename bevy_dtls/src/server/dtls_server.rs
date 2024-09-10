@@ -57,6 +57,7 @@ pub struct DtlsServerHealth {
 }
 
 struct DtlsServerAcpter {
+    max_clients: usize,
     listener: Arc<dyn Listener + Sync + Send>,
     conn_map: Arc<StdRwLock<HashMap<u64, DtlsConn>>>,
     acpt_tx:  TokioTx<ConnIndex>,
@@ -66,6 +67,7 @@ struct DtlsServerAcpter {
 impl DtlsServerAcpter {
     #[inline]
     fn new(
+        max_clients: usize,
         listener: Arc<dyn Listener + Sync + Send>,
         conn_map: Arc<StdRwLock<HashMap<u64, DtlsConn>>>
     ) -> (TokioRx<ConnIndex>, TokioTx<DtlsServerClose>, Self) {
@@ -73,6 +75,7 @@ impl DtlsServerAcpter {
         let (close_tx, close_rx) = tokio_channel::<DtlsServerClose>();
 
         (acpt_rx, close_tx, Self{
+            max_clients,
             listener,
             conn_map,
             acpt_tx,
@@ -190,6 +193,7 @@ impl DtlsConn {
 pub struct DtlsServer {
     runtime: Arc<Runtime>,
     
+    max_clients: usize,
     listener: Option<Arc<dyn Listener + Sync + Send>>,
     acpt_handle: Option<JoinHandle<anyhow::Result<()>>>,
     acpt_rx: Option<TokioRx<ConnIndex>>,
@@ -211,6 +215,7 @@ pub struct DtlsServer {
 impl DtlsServer {
     #[inline]
     pub fn new(
+        max_clients: usize,
         recv_buf_size: usize, 
         send_timeout_secs: u64,
         recv_timeout_secs: Option<u64>
@@ -222,6 +227,7 @@ impl DtlsServer {
         Ok(Self { 
             runtime: Arc::new(rt),
 
+            max_clients,
             listener: None, 
             acpt_handle: None,
             acpt_rx: None,
@@ -429,6 +435,7 @@ impl DtlsServer {
             close_tx,
             acpter
         ) = DtlsServerAcpter::new(
+            self.max_clients,
             match self.listener {
                 Some(ref l) => l.clone(),
                 None => bail!("listener is None")
@@ -466,9 +473,18 @@ impl DtlsServer {
                 }
             };
 
+            if acpter.conn_map.read()
+            .unwrap()
+            .len() >= acpter.max_clients {
+                warn!("{addr} is trying to connect, but exceeded max clients.");
+                if let Err(e) = conn.close().await {
+                    error!("error on disconnect {addr}: {e}");
+                }
+                continue;
+            }
+
             let idx = index;
             index += 1;
-            
             let mut w = acpter.conn_map.write()
             .unwrap();
             debug_assert!(!w.contains_key(&idx));

@@ -103,6 +103,7 @@ fn main() {
             ..default()
         },
         DtlsServerPlugin{
+            max_clients: 10,
             buf_size: 512,
             send_timeout_secs: 10,
             recv_timeout_secs: Some(10)

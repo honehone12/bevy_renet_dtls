@@ -90,6 +90,7 @@ fn main() {
             ..default()
         },
         RenetDtlsServerPlugin{
+            max_clients: 1,
             buf_size: 512,
             send_timeout_secs: 10,
             recv_timeout_secs: None
