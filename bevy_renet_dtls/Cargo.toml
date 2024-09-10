@@ -8,4 +8,4 @@ bevy = { workspace = true }
 bytes = { workspace = true }
 rustls = { workspace = true }
 bevy_dtls = { path = "../bevy_dtls"}
-bevy_renet = "0.0.12"
+bevy_renet = { version = "0.0.12", default-features = false }

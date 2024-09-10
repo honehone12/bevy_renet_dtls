@@ -1,5 +1,5 @@
 [workspace]
-members = ["bevy_dtls", "bevy_renet_dtls"]
+members = ["bevy_dtls", "bevy_renet_dtls", "replicon_demo"]
 resolver = "2"
 
 [workspace.dependencies]
