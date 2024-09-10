@@ -38,12 +38,14 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
 
     for client_id in clients {
         for ch in 0..ch_len {
-            let Some(bytes) = renet_server.receive_message(client_id, ch) else {
-                continue;
-            };
-
-            let msg = String::from_utf8(bytes.to_vec()).unwrap();
-            info!("message from: {client_id}: {msg}");
+            loop {
+                let Some(bytes) = renet_server.receive_message(client_id, ch) else {
+                    break;
+                };
+    
+                let msg = String::from_utf8(bytes.to_vec()).unwrap();
+                info!("message from: {client_id}: {msg}");
+            }
         }
     }    
 }
@@ -56,9 +58,6 @@ struct ServerPlugin {
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
-        let renet_server = RenetServer::new(ConnectionConfig::default());
-        app.insert_resource(renet_server);
-
         let mut dtls_server = app.world_mut()
         .resource_mut::<DtlsServer>();
         if let Err(e) = dtls_server.start(DtlsServerConfig{
@@ -68,6 +67,9 @@ impl Plugin for ServerPlugin {
         }) {
             panic!("{e}");
         }
+
+        let renet_server = RenetServer::new(ConnectionConfig::default());
+        app.insert_resource(renet_server);
 
         info!(
             "server is listening at {}:{}", 

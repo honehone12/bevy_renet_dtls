@@ -38,7 +38,7 @@ fn recv_system(
 ) {
     loop {
         let Some((conn_idx, bytes)) = dtls_server.recv() else {
-            break;
+            return;
         };
 
         if let Err(e) = renet_server.process_packet_from(
@@ -105,8 +105,6 @@ impl Plugin for RenetDtlsServerPlugin {
             acpt_system,
             recv_system,
         ))
-        .add_systems(PostUpdate,
-            send_system
-        );
+        .add_systems(PostUpdate, send_system);
     }
 }

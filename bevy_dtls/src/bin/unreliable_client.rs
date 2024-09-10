@@ -78,7 +78,8 @@ fn recv_hellooon_system(mut dtls_client: ResMut<DtlsClient>) {
             return;
         };
 
-        let msg = String::from_utf8(bytes.to_vec()).unwrap();
+        let msg = String::from_utf8(bytes.to_vec())
+        .unwrap();
         info!("message: {msg}");
     }
 }
@@ -160,8 +161,8 @@ fn main() {
     ))
     .insert_resource(ClientHellooonCounter(0))
     .add_systems(Update, (
-        send_hellooon_system,
         recv_hellooon_system,
+        send_hellooon_system,
         timeout_check_system,
         health_check_system
     ))

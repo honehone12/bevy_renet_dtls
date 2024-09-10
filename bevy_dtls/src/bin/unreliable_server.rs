@@ -122,8 +122,8 @@ fn main() {
     })
     .insert_resource(ServerHellooonCounter(0))
     .add_systems(Update, (
-        send_hellooon_system,
         recv_hellooon_system,
+        send_hellooon_system,
         timeout_check_system,
         health_check_system
     ))
