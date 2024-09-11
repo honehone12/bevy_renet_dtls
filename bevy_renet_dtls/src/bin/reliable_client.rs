@@ -114,7 +114,13 @@ impl Plugin for ClientPlugin {
         }
 
         let renet_client = RenetClient::new(ConnectionConfig::default());
-        app.insert_resource(renet_client);
+        app.insert_resource(renet_client)
+        .insert_resource(ClientHellooonCounter(0))
+        .add_systems(Update, (
+            handle_net_error,
+            recv_hellooon_system,
+            send_hellooon_system
+        ).chain());
 
         info!("client connected");
     }
@@ -145,11 +151,5 @@ fn main() {
             },
         }
     ))
-    .insert_resource(ClientHellooonCounter(0))
-    .add_systems(Update, (
-        handle_net_error,
-        recv_hellooon_system,
-        send_hellooon_system
-    ).chain())
     .run();
 }

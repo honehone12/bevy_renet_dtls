@@ -11,7 +11,12 @@ fn accept_system(mut dtls_server: ResMut<DtlsServer>) {
     };
 
     if let Err(e) = dtls_server.start_conn(conn_idx) {
-        panic!("{e}");
+        if cfg!(debug_assertions) {
+            panic!("{e}")
+        } else {
+            error!("{e}");
+            return;
+        }
     }
 
     debug!("conn: {} has been started from default system", conn_idx.index());

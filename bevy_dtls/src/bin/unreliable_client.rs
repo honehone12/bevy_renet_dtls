@@ -112,6 +112,13 @@ impl Plugin for ClientPlugin {
         }) {
             panic!("{e}")
         }
+
+        app.insert_resource(ClientHellooonCounter(0))
+        .add_systems(Update, (
+            handle_net_error,
+            recv_hellooon_system,
+            send_hellooon_system
+        ).chain());
     }
 }
 
@@ -145,11 +152,5 @@ fn main() {
             // }
         }
     ))
-    .insert_resource(ClientHellooonCounter(0))
-    .add_systems(Update, (
-        handle_net_error,
-        recv_hellooon_system,
-        send_hellooon_system
-    ).chain())
     .run();
 }

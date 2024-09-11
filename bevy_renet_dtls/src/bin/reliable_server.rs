@@ -75,7 +75,13 @@ impl Plugin for ServerPlugin {
         }
 
         let renet_server = RenetServer::new(ConnectionConfig::default());
-        app.insert_resource(renet_server);
+        app.insert_resource(renet_server)
+        .insert_resource(ServerHellooonCounter(0))
+        .add_systems(Update, (
+            handle_net_error,
+            recv_hellooon_system,
+            send_hellooon_system
+        ).chain());
 
         info!(
             "server is listening at {}:{}", 
@@ -110,11 +116,5 @@ fn main() {
             subject_alt_name: "webrtc.rs"
         }
     })
-    .insert_resource(ServerHellooonCounter(0))
-    .add_systems(Update, (
-        handle_net_error,
-        recv_hellooon_system,
-        send_hellooon_system
-    ).chain())
     .run();
 }

@@ -63,6 +63,13 @@ impl Plugin for SereverPlugin {
         }) {
             panic!("{e}");
         }
+
+        app.insert_resource(ServerHellooonCounter(0))
+        .add_systems(Update, (
+            handle_net_error,
+            recv_hellooon_system,
+            send_hellooon_system
+        ).chain());
     }
 }
 
@@ -95,11 +102,5 @@ fn main() {
         //     client_ca_path: "my_certificates/server.pub.pem" 
         // }
     })
-    .insert_resource(ServerHellooonCounter(0))
-    .add_systems(Update, (
-        handle_net_error,
-        recv_hellooon_system,
-        send_hellooon_system
-    ).chain())
     .run();
 }
