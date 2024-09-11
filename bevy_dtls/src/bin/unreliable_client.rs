@@ -5,7 +5,7 @@ use bevy::{
 };
 use bytes::Bytes;
 use bevy_dtls::client::{
-    cert_option::ClientCertOption, dtls_client::*, plugin::DtlsClientPlugin
+    cert_option::ClientCertOption, dtls_client::*, health::DtlsClientError, plugin::DtlsClientPlugin
 };
 
 #[derive(Component)]
@@ -84,6 +84,12 @@ fn recv_hellooon_system(mut dtls_client: ResMut<DtlsClient>) {
     }
 }
 
+fn handle_net_error(mut errors: EventReader<DtlsClientError>) {
+    for e in errors.read() {
+        error!("{e:?}");
+    }
+}
+
 struct ClientPlugin {
     server_addr: IpAddr,
     server_port: u16,
@@ -141,8 +147,9 @@ fn main() {
     ))
     .insert_resource(ClientHellooonCounter(0))
     .add_systems(Update, (
+        handle_net_error,
         recv_hellooon_system,
         send_hellooon_system
-    ))
+    ).chain())
     .run();
 }

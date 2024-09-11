@@ -5,9 +5,7 @@ use bevy::{
     prelude::*
 };
 use bevy_dtls::server::{
-    cert_option::ServerCertOption, 
-    dtls_server::{DtlsServer, DtlsServerConfig}, 
-    plugin::DtlsServerPlugin,
+    cert_option::ServerCertOption, dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError, plugin::DtlsServerPlugin
 };
 use bytes::Bytes;
 
@@ -38,6 +36,12 @@ fn recv_hellooon_system(mut dtls_server: ResMut<DtlsServer>) {
 
         let msg = String::from_utf8(bytes.to_vec()).unwrap();
         info!("message from conn: {}: {msg}", idx.index());
+    }
+}
+
+fn handle_net_error(mut errors: EventReader<DtlsServerError>) {
+    for e in errors.read() {
+        error!("{e:?}");
     }
 }
 
@@ -93,8 +97,9 @@ fn main() {
     })
     .insert_resource(ServerHellooonCounter(0))
     .add_systems(Update, (
+        handle_net_error,
         recv_hellooon_system,
         send_hellooon_system
-    ))
+    ).chain())
     .run();
 }

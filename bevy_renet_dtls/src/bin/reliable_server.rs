@@ -10,7 +10,7 @@ use bevy::{
 use bevy_renet::{renet::{ConnectionConfig, DefaultChannel, RenetServer}, RenetServerPlugin};
 use bevy_dtls::server::{
     cert_option::ServerCertOption, 
-    dtls_server::{DtlsServer, DtlsServerConfig}
+    dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError
 };
 use bevy_renet_dtls::server::renet_dtls_server::RenetDtlsServerPlugin;
 use bytes::Bytes;
@@ -48,6 +48,12 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
             }
         }
     }    
+}
+
+fn handle_net_error(mut errors: EventReader<DtlsServerError>) {
+    for e in errors.read() {
+        error!("{e:?}");
+    }
 }
 
 struct ServerPlugin {
@@ -106,8 +112,9 @@ fn main() {
     })
     .insert_resource(ServerHellooonCounter(0))
     .add_systems(Update, (
+        handle_net_error,
         recv_hellooon_system,
         send_hellooon_system
-    ))
+    ).chain())
     .run();
 }

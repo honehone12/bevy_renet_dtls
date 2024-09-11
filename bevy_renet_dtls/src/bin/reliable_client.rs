@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use bevy::{log::{Level, LogPlugin}, prelude::*};
 use bevy_dtls::client::{
     cert_option::ClientCertOption, 
-    dtls_client::{DtlsClient, DtlsClientConfig}
+    dtls_client::{DtlsClient, DtlsClientConfig}, health::DtlsClientError
 };
 use bevy_renet::{renet::{ConnectionConfig, DefaultChannel, RenetClient}, RenetClientPlugin};
 use bevy_renet_dtls::client::renet_dtls_client::RenetDtlsClientPlugin;
@@ -85,6 +85,12 @@ fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
     }
 }
 
+fn handle_net_error(mut errors: EventReader<DtlsClientError>) {
+    for e in errors.read() {
+        error!("{e:?}");
+    }
+}
+
 struct ClientPlugin {
     server_addr: IpAddr,
     server_port: u16,
@@ -141,8 +147,9 @@ fn main() {
     ))
     .insert_resource(ClientHellooonCounter(0))
     .add_systems(Update, (
+        handle_net_error,
         recv_hellooon_system,
         send_hellooon_system
-    ))
+    ).chain())
     .run();
 }
