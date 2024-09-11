@@ -242,6 +242,10 @@ impl DtlsClient {
     }
 
     fn start_send_loop(&mut self) -> anyhow::Result<()> {
+        if self.send_handle.is_some() {
+            bail!("join handle already exists, or health_check is not called");
+        }
+        
         let (
             send_tx, 
             timeout_rx, 
@@ -335,6 +339,10 @@ impl DtlsClient {
     }
 
     fn start_recv_loop(&mut self) -> anyhow::Result<()> {
+        if self.recv_handle.is_some() {
+            bail!("join handle already exists, or health_check is not called");
+        }
+        
         let (recv_rx, close_tx, recver) = DtlsClientRecver::new(
             match self.conn {
                 Some(ref c) => c.clone(),

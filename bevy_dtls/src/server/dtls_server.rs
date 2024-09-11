@@ -430,6 +430,10 @@ impl DtlsServer {
 
     fn start_acpt_loop(&mut self)
     -> anyhow::Result<()> {
+        if self.acpt_handle.is_some() {
+            bail!("join handle exists, or health_check is not called");
+        }
+
         let (
             acpt_rx,
             close_tx,
@@ -537,6 +541,10 @@ impl DtlsServer {
         let Some(dtls_conn) = w.get_mut(&conn_idx.0) else {
             bail!("dtls conn: {} is None", conn_idx.0);
         };
+
+        if dtls_conn.recv_handle.is_some() {
+            bail!("join handle already exists, or health_check is not called");
+        }
 
         let (close_tx, recver) = DtlsServerRecver::new(
             conn_idx, 
@@ -649,6 +657,10 @@ impl DtlsServer {
         let Some(dtls_conn) = w.get_mut(&conn_idx.0) else {
             bail!("dtls conn: {} is None", conn_idx.0);
         };
+
+        if dtls_conn.send_handle.is_some() {
+            bail!("join handle already exists, or health_check is not called");
+        }
 
         let (send_tx, close_tx, sender) = DtlsServerSender::new(
             conn_idx, 
