@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use rustls::crypto::aws_lc_rs;
-use super::dtls_server::*;
+use super::{
+    dtls_server::DtlsServer, 
+    health::{self, DtlsServerError}
+};
 
 fn accept_system(mut dtls_server: ResMut<DtlsServer>) {
     let Some(conn_idx) = dtls_server.acpt() else {
@@ -40,6 +43,11 @@ impl Plugin for DtlsServerPlugin {
         };
 
         app.insert_resource(dtls_server)
-        .add_systems(PreUpdate, accept_system);
+        .add_event::<DtlsServerError>()
+        .add_systems(PreUpdate, accept_system)
+        .add_systems(Update, (
+            health::fatal_event_system,
+            health::timeout_event_system
+        ).chain());
     }
 }

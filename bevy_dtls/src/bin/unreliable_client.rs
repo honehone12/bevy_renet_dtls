@@ -84,26 +84,6 @@ fn recv_hellooon_system(mut dtls_client: ResMut<DtlsClient>) {
     }
 }
 
-fn timeout_check_system(mut dtls_client: ResMut<DtlsClient>) {
-    loop {
-        let Err(_) = dtls_client.timeout_check() else {
-            return;
-        };
-
-        error!("sending timeout, but still available to re-try");
-    }
-}
-
-fn health_check_system(mut dtls_client: ResMut<DtlsClient>) {
-    let health = dtls_client.health_check();
-    if let Some(Err(e)) = health.sender {
-        panic!("sender: {e}");
-    }
-    if let Some(Err(e)) = health.recver {
-        panic!("recver: {e}");
-    }
-}
-
 struct ClientPlugin {
     server_addr: IpAddr,
     server_port: u16,
@@ -162,9 +142,7 @@ fn main() {
     .insert_resource(ClientHellooonCounter(0))
     .add_systems(Update, (
         recv_hellooon_system,
-        send_hellooon_system,
-        timeout_check_system,
-        health_check_system
+        send_hellooon_system
     ))
     .run();
 }

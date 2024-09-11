@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use bevy_renet::{renet::RenetServer, RenetReceive, RenetSend};
-use bevy_dtls::server::dtls_server::DtlsServer;
+use bevy_dtls::server::{
+    dtls_server::DtlsServer, 
+    health::{self, DtlsServerError
+}};
 use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
 use crate::{DtlsSet, ToRenetClientId};
@@ -11,7 +14,7 @@ fn acpt_system(
 ) {
     loop {
         let Some(conn_idx) = dtls_server.acpt() else {
-            break;
+            return;
         };
 
         if let Err(e) = dtls_server.start_conn(conn_idx) {
@@ -102,11 +105,16 @@ impl Plugin for RenetDtlsServerPlugin {
         };
 
         app.insert_resource(dtls_server)
+        .add_event::<DtlsServerError>()
         .configure_sets(PreUpdate, DtlsSet::Acpt.before(DtlsSet::Recv))
         .configure_sets(PreUpdate, DtlsSet::Recv.before(RenetReceive))
         .configure_sets(PostUpdate, DtlsSet::Send.after(RenetSend))
         .add_systems(PreUpdate, acpt_system.in_set(DtlsSet::Acpt))
         .add_systems(PreUpdate, recv_system.in_set(DtlsSet::Recv))
-        .add_systems(PostUpdate, send_system);
+        .add_systems(PostUpdate, send_system.in_set(DtlsSet::Send))
+        .add_systems(Update, (
+            health::fatal_event_system,
+            health::timeout_event_system
+        ).chain());
     }
 }

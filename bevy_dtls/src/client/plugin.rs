@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use rustls::crypto::aws_lc_rs;
-use super::dtls_client::*;
+use super::{
+    dtls_client::DtlsClient, 
+    health::{self, DtlsClientError}
+};
 
 pub struct DtlsClientPlugin {
     pub timeout_secs: u64,
@@ -20,6 +23,11 @@ impl Plugin for DtlsClientPlugin {
             Err(e) => panic!("{e}")
         };
 
-        app.insert_resource(dtls_client);
+        app.insert_resource(dtls_client)
+        .add_event::<DtlsClientError>()
+        .add_systems(Update, (
+            health::fatal_event_system,
+            health::timeout_event_system
+        ).chain());
     }
 }

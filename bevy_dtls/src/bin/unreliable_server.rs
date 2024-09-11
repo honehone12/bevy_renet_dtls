@@ -6,8 +6,8 @@ use bevy::{
 };
 use bevy_dtls::server::{
     cert_option::ServerCertOption, 
-    dtls_server::{DtlsServer, DtlsServerConfig, DtlsServerTimeout}, 
-    plugin::DtlsServerPlugin
+    dtls_server::{DtlsServer, DtlsServerConfig}, 
+    plugin::DtlsServerPlugin,
 };
 use bytes::Bytes;
 
@@ -38,36 +38,6 @@ fn recv_hellooon_system(mut dtls_server: ResMut<DtlsServer>) {
 
         let msg = String::from_utf8(bytes.to_vec()).unwrap();
         info!("message from conn: {}: {msg}", idx.index());
-    }
-}
-
-fn timeout_check_system(mut dtls_server: ResMut<DtlsServer>) {
-    loop {
-        let Err(e) = dtls_server.timeout_check() else {
-            return;
-        };
-    
-        match e {
-            DtlsServerTimeout::Send { conn_index, bytes: _ } => {
-                error!("sender: {conn_index:?} timeout, but still available to re-try");
-            }
-            DtlsServerTimeout::Recv(idx) => {
-                error!("recver: {idx:?} timeout, this is useful for impl heartbeat");
-            }
-        }
-    }
-}
-
-fn health_check_system(mut dtls_server: ResMut<DtlsServer>) {
-    let health = dtls_server.health_check();
-    if let Some(Err(e)) = health.listener {
-        panic!("listener: {e}");
-    }
-    if let Some((idx, Err(e))) = health.sender.get(0) {
-        panic!("sender: {idx}: {e}");
-    }
-    if let Some((idx, Err(e))) = health.recver.get(0) {
-        panic!("recver: {idx}: {e}");
     }
 }
 
@@ -124,9 +94,7 @@ fn main() {
     .insert_resource(ServerHellooonCounter(0))
     .add_systems(Update, (
         recv_hellooon_system,
-        send_hellooon_system,
-        timeout_check_system,
-        health_check_system
+        send_hellooon_system
     ))
     .run();
 }

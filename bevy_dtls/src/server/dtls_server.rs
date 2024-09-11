@@ -50,10 +50,11 @@ pub enum DtlsServerTimeout {
 
 struct DtlsServerClose;
 
+#[derive(Debug)]
 pub struct DtlsServerHealth {
     pub listener: Option<anyhow::Result<()>>,
-    pub sender: Vec<(u64, anyhow::Result<()>)>,
-    pub recver: Vec<(u64, anyhow::Result<()>)>
+    pub sender: Vec<(ConnIndex, anyhow::Result<()>)>,
+    pub recver: Vec<(ConnIndex, anyhow::Result<()>)>
 }
 
 struct DtlsServerAcpter {
@@ -618,7 +619,7 @@ impl DtlsServer {
     }
 
     fn health_check_recv(&mut self)
-    -> Vec<(u64, anyhow::Result<()>)> {
+    -> Vec<(ConnIndex, anyhow::Result<()>)> {
         let finished = {
             let mut v = vec![];
             let mut w = self.conn_map.write()
@@ -645,7 +646,7 @@ impl DtlsServer {
                 Ok(r) => r,
                 Err(e) => Err(anyhow!(e))
             };
-            results.push((idx, r));
+            results.push((ConnIndex(idx), r));
         }
         results
     }
@@ -725,7 +726,7 @@ impl DtlsServer {
     }
 
     fn health_check_send(&mut self)
-    -> Vec<(u64, anyhow::Result<()>)> {
+    -> Vec<(ConnIndex, anyhow::Result<()>)> {
         let finished = {
             let mut v = vec![];
             let mut w = self.conn_map.write()
@@ -752,7 +753,7 @@ impl DtlsServer {
                 Ok(r) => r,
                 Err(e) => Err(anyhow!(e))
             };
-            results.push((idx, r));
+            results.push((ConnIndex(idx), r));
         }
         results
     }
