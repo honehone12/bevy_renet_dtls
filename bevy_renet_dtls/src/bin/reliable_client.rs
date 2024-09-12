@@ -2,60 +2,15 @@ use std::net::{IpAddr, Ipv4Addr};
 use bevy::{log::{Level, LogPlugin}, prelude::*};
 use bevy_dtls::client::{
     cert_option::ClientCertOption, 
-    dtls_client::{DtlsClient, DtlsClientConfig}, health::DtlsClientError
+    dtls_client::{DtlsClient, DtlsClientConfig}, 
+    health::DtlsClientError
 };
-use bevy_renet::{renet::{ConnectionConfig, DefaultChannel, RenetClient}, RenetClientPlugin};
+use bevy_renet::{
+    renet::{ConnectionConfig, DefaultChannel, RenetClient}, 
+    RenetClientPlugin
+};
 use bevy_renet_dtls::client::renet_dtls_client::RenetDtlsClientPlugin;
 use bytes::Bytes;
-
-#[derive(Component)]
-struct RollingBox;
-
-fn setup_graphics(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>
-) {
-    commands.spawn(DirectionalLightBundle{
-        transform: Transform{
-            translation: Vec3::new(0.0, 10.0, 0.0),
-            rotation: Quat::from_rotation_x(-std::f32::consts::PI / 2.0),
-            ..default()
-        },
-        ..default()
-    });
-
-    commands.spawn(Camera3dBundle{
-        transform: Transform::from_translation(Vec3::new(0.0, 10.0, 10.0))
-        .looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
-
-    commands.spawn(PbrBundle{
-        mesh: meshes.add(Mesh::from(Cuboid::from_size(Vec3::new(3.0, 3.0, 3.0)))),
-        material: materials.add(Color::from(bevy::color::palettes::basic::MAROON)),
-        ..default()
-    })
-    .insert(RollingBox);
-}
-
-fn graphics_system(
-    mut query: Query<&mut Transform, With<RollingBox>>,
-    time: Res<Time>
-) {
-    for mut transform in query.iter_mut() {
-        transform.rotate_y(std::f32::consts::PI * 0.5 * time.delta_seconds());
-    }
-}
-
-struct ClientGraphicsPlugin;
-
-impl Plugin for ClientGraphicsPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_graphics)
-        .add_systems(Update, graphics_system);
-    }
-}
 
 #[derive(Resource)]
 struct ClientHellooonCounter(usize);
@@ -139,8 +94,7 @@ fn main() {
             buf_size: 512
         }
     ))
-    .add_plugins((
-        ClientGraphicsPlugin,
+    .add_plugins(
         ClientPlugin{
             server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
             server_port: 4443,
@@ -150,6 +104,6 @@ fn main() {
                 subject_alt_name: "webrtc.rs" 
             },
         }
-    ))
+    )
     .run();
 }
