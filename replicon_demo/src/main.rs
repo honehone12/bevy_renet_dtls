@@ -1,6 +1,6 @@
 use std::{error::Error, net::{IpAddr, Ipv4Addr}};
 use bevy::{
-    color::palettes::css::GREEN, log::{Level, LogPlugin}, prelude::*
+    color::palettes::css::GREEN, prelude::*
 };
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::{
