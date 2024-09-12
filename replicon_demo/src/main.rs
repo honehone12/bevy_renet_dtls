@@ -269,10 +269,7 @@ fn main() {
     App::new()
     .init_resource::<Cli>()
     .add_plugins((
-        DefaultPlugins.set(LogPlugin{
-            level: Level::DEBUG,
-            ..default()
-        }),
+        DefaultPlugins,
         RepliconPlugins,
         RepliconRenetPlugins,
         RenetDtlsServerPlugin{
