@@ -387,7 +387,7 @@ impl DtlsClient {
             }
 
             buf.resize(recver.buf_size, 0);
-            debug!("received {n}bytes from");
+            debug!("received {n}bytes");
         };
 
         recver.conn.close().await?;

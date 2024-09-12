@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use bevy_renet::{renet::RenetServer, RenetReceive, RenetSend};
 use bevy_dtls::server::{
     dtls_server::DtlsServer, 
-    health::{self, DtlsServerError
-}};
+    health::{self, DtlsServerError}
+};
 use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
 use crate::{DtlsSet, ToRenetClientId};
@@ -91,7 +91,7 @@ impl Plugin for RenetDtlsServerPlugin {
         if aws_lc_rs::default_provider()
         .install_default()
         .is_err() {
-            panic!("failed to setup crypto provider");
+            info!("crypto provider already exists");
         }
 
         let dtls_server = match DtlsServer::new(
@@ -109,9 +109,21 @@ impl Plugin for RenetDtlsServerPlugin {
         .configure_sets(PreUpdate, DtlsSet::Acpt.before(DtlsSet::Recv))
         .configure_sets(PreUpdate, DtlsSet::Recv.before(RenetReceive))
         .configure_sets(PostUpdate, DtlsSet::Send.after(RenetSend))
-        .add_systems(PreUpdate, acpt_system.in_set(DtlsSet::Acpt))
-        .add_systems(PreUpdate, recv_system.in_set(DtlsSet::Recv))
-        .add_systems(PostUpdate, send_system.in_set(DtlsSet::Send))
+        .add_systems(PreUpdate, 
+            acpt_system
+            .in_set(DtlsSet::Acpt)
+            .run_if(resource_exists::<RenetServer>)
+        )
+        .add_systems(PreUpdate, 
+            recv_system
+            .in_set(DtlsSet::Recv)
+            .run_if(resource_exists::<RenetServer>)
+        )
+        .add_systems(PostUpdate, 
+            send_system
+            .in_set(DtlsSet::Send)
+            .run_if(resource_exists::<RenetServer>)
+        )
         .add_systems(Update, (
             health::fatal_event_system,
             health::timeout_event_system

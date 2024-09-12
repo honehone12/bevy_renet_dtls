@@ -6,6 +6,7 @@ resolver = "2"
 bevy = "0.14.1"
 bytes = "1.7.1"
 rustls = "0.23.12"
+anyhow = "1.0.86"
 
 [profile.dev]
 opt-level = 1

@@ -12,7 +12,7 @@ use bevy_dtls::server::{
     cert_option::ServerCertOption, 
     dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError
 };
-use bevy_renet_dtls::server::renet_dtls_server::RenetDtlsServerPlugin;
+use bevy_renet_dtls::server::RenetDtlsServerPlugin;
 use bytes::Bytes;
 
 #[derive(Resource)]

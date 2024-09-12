@@ -9,3 +9,4 @@ bevy_renet_dtls = { path = "../bevy_renet_dtls" }
 bevy_replicon = "0.28.2"
 bevy_replicon_renet = { version = "0.5.0", default-features = false, features = ["client", "server", "renet_serde"] }
 clap = { version = "4.5.17", features = ["derive"] }
+serde = "1.0.210"

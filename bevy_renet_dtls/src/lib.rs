@@ -1,9 +1,7 @@
-pub mod server {
-    pub mod renet_dtls_server;
-}
-pub mod client {
-    pub mod renet_dtls_client;
-}
+pub mod server;
+pub mod client;
+
+pub use bevy_dtls as dtls;
 
 use bevy::prelude::SystemSet;
 use bevy_renet::renet::ClientId;

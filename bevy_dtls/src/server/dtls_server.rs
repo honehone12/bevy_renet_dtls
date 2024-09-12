@@ -459,7 +459,9 @@ impl DtlsServer {
     }
 
     async fn acpt_loop(mut acpter: DtlsServerAcpter) -> anyhow::Result<()> {
-        let mut index = 0;
+        // start index from 1
+        // because server wants reserve 0
+        let mut index = 1;
 
         let result = loop {
             let (conn, addr) = select! {

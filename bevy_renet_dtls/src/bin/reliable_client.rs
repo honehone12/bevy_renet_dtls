@@ -9,7 +9,7 @@ use bevy_renet::{
     renet::{ConnectionConfig, DefaultChannel, RenetClient}, 
     RenetClientPlugin
 };
-use bevy_renet_dtls::client::renet_dtls_client::RenetDtlsClientPlugin;
+use bevy_renet_dtls::client::{DtlsClientRenetExt, RenetDtlsClientPlugin};
 use bytes::Bytes;
 
 #[derive(Resource)]
@@ -56,19 +56,23 @@ struct ClientPlugin {
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
+        let mut renet_client = RenetClient::new(ConnectionConfig::default());
         let mut dtls_client = app.world_mut()
         .resource_mut::<DtlsClient>();
-        if let Err(e) = dtls_client.start(DtlsClientConfig{
-            server_addr: self.server_addr,
-            server_port: self.server_port,
-            client_addr: self.client_addr,
-            client_port: self.client_port,
-            cert_option: self.cert_option,
-        }) {
+
+        if let Err(e) = dtls_client.start_renet_dtls(
+            DtlsClientConfig{
+                server_addr: self.server_addr,
+                server_port: self.server_port,
+                client_addr: self.client_addr,
+                client_port: self.client_port,
+                cert_option: self.cert_option,
+            },
+            &mut renet_client
+        ) {
             panic!("{e}");
         }
 
-        let renet_client = RenetClient::new(ConnectionConfig::default());
         app.insert_resource(renet_client)
         .insert_resource(ClientHellooonCounter(0))
         .add_systems(Update, (
