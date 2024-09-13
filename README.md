@@ -1,7 +1,7 @@
 # bevy_renet_dtls
 dtls encryption transport for bevy_renet game networking as alternative of netcode.  
 
-from technical view, this is ECS port of webrtc_dtls and taking advantage of it for game networking with reliable udp.  
+from technical view, this is ECS port of webrtc_dtls and taking advantage of it for game networking with reliable UDP.  
 
 #### replicon simple box demo  
 popular(!?) demo with bevy_replicon & bevy_replicon_renet  
