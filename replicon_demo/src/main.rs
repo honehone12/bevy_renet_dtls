@@ -101,9 +101,11 @@ fn read_cli(
             server_transport.start(DtlsServerConfig{
                 listen_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 listen_port: port,
-                cert_option: ServerCertOption::GenerateSelfSigned { 
-                    subject_alt_name: "webrtc.rs" 
-                },
+                cert_option: ServerCertOption::LoadWithClientAuth { 
+                    priv_key_path: "my_certificates/server.priv.pem", 
+                    certificate_path: "my_certificates/server.pub.pem",
+                    client_ca_path: "my_certificates/server.pub.pem" 
+                }
             })?;
 
             commands.insert_resource(server);
@@ -137,9 +139,12 @@ fn read_cli(
                     server_port: port,
                     client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
                     client_port: 0,
-                    cert_option: ClientCertOption::GenerateSelfSigned { 
-                        subject_alt_name: "webrtc.rs" 
-                    },
+                    cert_option: ClientCertOption::LoadWithClientAuth { 
+                            server_name: "webrtc.rs", 
+                            priv_key_path: "my_certificates/client.priv.pem", 
+                            certificate_path: "my_certificates/client.pub.pem",
+                            root_ca_path: "my_certificates/server.pub.pem" 
+                        }
                 },
                 &mut client
             )?;

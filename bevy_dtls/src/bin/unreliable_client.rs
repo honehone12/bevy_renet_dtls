@@ -94,15 +94,7 @@ fn main() {
             server_port: 4443,
             client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
             client_port: 0,
-            cert_option: ClientCertOption::GenerateSelfSigned { 
-                subject_alt_name: "webrtc.rs" 
-            }
-            // cert_option: ClientCertOption::Load { 
-            //     subject_alt_name: "webrtc.rs", 
-            //     priv_key_path: "my_certificates/client.priv.pem", 
-            //     certificate_path: "my_certificates/client.pub.pem",
-            //     root_ca_path: "my_certificates/server.pub.pem" 
-            // }
+            cert_option: ClientCertOption::Insecure
         }
     )
     .run();

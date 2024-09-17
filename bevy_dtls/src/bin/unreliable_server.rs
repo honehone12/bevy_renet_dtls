@@ -96,11 +96,6 @@ fn main() {
         cert_option: ServerCertOption::GenerateSelfSigned { 
             subject_alt_name: "webrtc.rs"
         }
-        // cert_option: ServerCertOption::Load { 
-        //     priv_key_path: "my_certificates/server.priv.pem", 
-        //     certificate_path: "my_certificates/server.pub.pem",
-        //     client_ca_path: "my_certificates/server.pub.pem" 
-        // }
     })
     .run();
 }

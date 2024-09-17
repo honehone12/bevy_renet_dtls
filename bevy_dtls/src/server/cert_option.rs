@@ -12,6 +12,10 @@ pub enum ServerCertOption {
     },
     Load {
         priv_key_path: &'static str,
+        certificate_path: &'static str
+    },
+    LoadWithClientAuth {
+        priv_key_path: &'static str,
         certificate_path: &'static str,
         client_ca_path: &'static str
     }
@@ -33,7 +37,19 @@ impl ServerCertOption {
                     ..Default::default()
                 }
             }
-            ServerCertOption::Load { 
+            ServerCertOption::Load { priv_key_path, certificate_path } => {
+                let cert = loader::load_key_and_certificate(
+                    priv_key_path.into(),
+                    certificate_path.into()
+                )?;
+
+                Config{
+                    certificates: vec![cert],
+                    extended_master_secret: ExtendedMasterSecretType::Require,                       
+                    ..Default::default()
+                }
+            }
+            ServerCertOption::LoadWithClientAuth { 
                 priv_key_path, 
                 certificate_path,
                 client_ca_path 

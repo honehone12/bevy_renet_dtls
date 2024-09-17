@@ -1,17 +1,16 @@
 use rustls::RootCertStore;
-use webrtc_dtls::{
-    config::{Config, ExtendedMasterSecretType}, 
-    crypto::Certificate
-};
+use webrtc_dtls::config::{Config, ExtendedMasterSecretType};
 use crate::cert::loader;
 
 #[derive(Clone, Copy)]
 pub enum ClientCertOption {
-    GenerateSelfSigned {
-        subject_alt_name: &'static str
-    },
+    Insecure,
     Load {
-        subject_alt_name: &'static str,
+        server_name: &'static str,
+        root_ca_path: &'static str
+    },
+    LoadWithClientAuth {
+        server_name: &'static str,
         priv_key_path: &'static str,
         certificate_path: &'static str,
         root_ca_path: &'static str
@@ -21,23 +20,29 @@ pub enum ClientCertOption {
 impl ClientCertOption {
     pub fn to_dtls_config(self) -> anyhow::Result<Config> {
         let config = match self {
-            ClientCertOption::GenerateSelfSigned { 
-                subject_alt_name
-            } => {
-                let cert = Certificate::generate_self_signed(vec![
-                    subject_alt_name.to_string()
-                ])?;
-
+            ClientCertOption::Insecure => {
                 Config{
-                    certificates: vec![cert],   
                     insecure_skip_verify: true,
                     extended_master_secret: ExtendedMasterSecretType::Require,
-                    server_name: subject_alt_name.to_string(),
                     ..Default::default()
                 }
             }
-            ClientCertOption::Load {
-                subject_alt_name, 
+            ClientCertOption::Load { server_name, root_ca_path } => {
+                let mut root_ca_store = RootCertStore::empty();
+                let root_ca = loader::load_certtificate(root_ca_path.into())?;
+                for c in root_ca.iter() {
+                    root_ca_store.add(c.clone())?;
+                }
+
+                Config{
+                    extended_master_secret: ExtendedMasterSecretType::Require,
+                    roots_cas: root_ca_store,
+                    server_name: server_name.to_string(),
+                    ..Default::default()
+                }
+            }
+            ClientCertOption::LoadWithClientAuth {
+                server_name, 
                 priv_key_path, 
                 certificate_path,
                 root_ca_path 
@@ -57,7 +62,7 @@ impl ClientCertOption {
                     certificates: vec![cert],
                     extended_master_secret: ExtendedMasterSecretType::Require,
                     roots_cas: root_ca_store,
-                    server_name: subject_alt_name.to_string(),
+                    server_name: server_name.to_string(),
                     ..Default::default()
                 }
             }
