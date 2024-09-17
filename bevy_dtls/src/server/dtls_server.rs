@@ -461,7 +461,7 @@ impl DtlsServer {
     async fn acpt_loop(mut acpter: DtlsServerAcpter) -> anyhow::Result<()> {
         // start index from 1
         // because server wants reserve 0
-        let mut index = 1;
+        let mut index: u64 = 1;
 
         let result = loop {
             let (conn, addr) = select! {
@@ -491,7 +491,11 @@ impl DtlsServer {
             }
 
             let idx = index;
-            index += 1;
+            index = match index.checked_add(1) {
+                Some(i) => i,
+                None => break Err(anyhow!("conn index overflow"))
+            };
+            
             let mut w = acpter.conn_map.write()
             .unwrap();
             debug_assert!(!w.contains_key(&idx));
