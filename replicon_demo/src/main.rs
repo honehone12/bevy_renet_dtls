@@ -8,7 +8,7 @@ use bevy_replicon_renet::{
     RenetChannelsExt, RepliconRenetPlugins
 };
 use bevy_renet_dtls::{
-    client::{DtlsClientRenetExt, RenetDtlsClientPlugin}, dtls::{
+    client::{RenetClientDtlsExt, RenetDtlsClientPlugin}, dtls::{
         client::{
             cert_option::ClientCertOption, dtls_client::{DtlsClient, DtlsClientConfig}, health::DtlsClientError
         }, server::{
@@ -133,20 +133,20 @@ fn read_cli(
                 ..Default::default()
             });
             
-            client_transport.start_renet_dtls(
+            client.start_with_dtls(
+                &mut client_transport,
                 DtlsClientConfig{
                     server_addr: ip,
                     server_port: port,
                     client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
                     client_port: 0,
                     cert_option: ClientCertOption::LoadWithClientAuth { 
-                            server_name: "webrtc.rs", 
-                            priv_key_path: "my_certificates/client.priv.pem", 
-                            certificate_path: "my_certificates/client.pub.pem",
-                            root_ca_path: "my_certificates/server.pub.pem" 
-                        }
-                },
-                &mut client
+                        server_name: "webrtc.rs", 
+                        priv_key_path: "my_certificates/client.priv.pem", 
+                        certificate_path: "my_certificates/client.pub.pem",
+                        root_ca_path: "my_certificates/server.pub.pem" 
+                    }
+                }
             )?;
 
             commands.insert_resource(client);
@@ -279,13 +279,13 @@ fn main() {
         RepliconRenetPlugins,
         RenetDtlsServerPlugin{
             max_clients: 10,
-            buf_size: 512,
+            buf_size: 1500,
             send_timeout_secs: 10,
             recv_timeout_secs: None,
         },
         RenetDtlsClientPlugin{
             timeout_secs: 10,
-            buf_size: 512,
+            buf_size: 1500,
         },
         SimpleBoxPlugin,
     ))

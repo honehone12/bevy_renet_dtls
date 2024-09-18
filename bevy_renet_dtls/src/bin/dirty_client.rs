@@ -40,9 +40,20 @@ fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
     }
 }
 
-fn handle_net_error(mut errors: EventReader<DtlsClientError>) {
+fn handle_net_error(
+    mut renet_client: ResMut<RenetClient>,
+    mut dtls_client: ResMut<DtlsClient>,
+    mut errors: EventReader<DtlsClientError>
+) {
     for e in errors.read() {
-        error!("{e:?}");
+        match e {
+            DtlsClientError::SendTimeout { .. } => error!("{e:?}"),
+            DtlsClientError::Fatal { err } => {
+                error!("{err}: disconnecting");
+
+                renet_client.disconnect_with_dtls(&mut dtls_client);
+            }
+        }
     }
 }
 
@@ -77,8 +88,8 @@ impl Plugin for ClientPlugin {
         .insert_resource(ClientHellooonCounter(0))
         .add_systems(Update, (
             handle_net_error,
-            recv_hellooon_system,
-            send_hellooon_system
+            send_hellooon_system,
+            recv_hellooon_system
         ).chain());
 
         info!("client connected");
@@ -89,13 +100,13 @@ fn main() {
     App::new()
     .add_plugins((
         DefaultPlugins.set(LogPlugin{
-            level: Level::INFO,
+            level: Level::DEBUG,
             ..default()
         }),
         RenetClientPlugin,
         RenetDtlsClientPlugin{
             timeout_secs: 10,
-            buf_size: 512
+            buf_size: 1500
         }
     ))
     .add_plugins(

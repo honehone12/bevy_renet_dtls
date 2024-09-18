@@ -8,6 +8,19 @@ use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
 use crate::{DtlsSet, ToRenetClientId};
 
+fn clean_system(
+    mut renet_server: ResMut<RenetServer>,
+    mut dtls_server: ResMut<DtlsServer>
+) {
+    let dis_conns = renet_server.disconnections_id();
+    for dis_conn in dis_conns {
+        dtls_server.close_conn(dis_conn.raw());
+        debug!("cleaning: {dis_conn:?}, removed from dtls server");
+        renet_server.remove_connection(dis_conn);
+        debug!("cleaning: {dis_conn:?}, removed from renet server");
+    }
+}
+
 fn acpt_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>
@@ -63,6 +76,8 @@ fn send_system(
 ) {
     let clients = renet_server.clients_id();
     'client_loop: for client_id in clients {
+        // no packets will be sent if renet server is closed before this system, 
+        // even though send_message is called on this frame
         let packets = renet_server.get_packets_to_send(client_id)
         .unwrap();
 
@@ -106,8 +121,8 @@ impl Plugin for RenetDtlsServerPlugin {
 
         app.insert_resource(dtls_server)
         .add_event::<DtlsServerError>()
-        .configure_sets(PreUpdate, DtlsSet::Acpt.before(DtlsSet::Recv))
         .configure_sets(PreUpdate, DtlsSet::Recv.before(RenetReceive))
+        .configure_sets(PreUpdate, DtlsSet::Acpt.before(DtlsSet::Recv))
         .configure_sets(PostUpdate, DtlsSet::Send.after(RenetSend))
         .add_systems(PreUpdate, 
             acpt_system
@@ -124,9 +139,12 @@ impl Plugin for RenetDtlsServerPlugin {
             .in_set(DtlsSet::Send)
             .run_if(resource_exists::<RenetServer>)
         )
-        .add_systems(Update, (
+        .add_systems(PostUpdate, (
+            clean_system,
             health::fatal_event_system,
             health::timeout_event_system
-        ).chain());
+        ).chain(
+        ).after(DtlsSet::Send
+        ).run_if(resource_exists::<RenetServer>));
     }
 }

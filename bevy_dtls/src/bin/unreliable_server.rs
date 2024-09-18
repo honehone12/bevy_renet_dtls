@@ -10,7 +10,7 @@ use bevy_dtls::server::{
 use bytes::Bytes;
 
 #[derive(Resource)]
-struct ServerHellooonCounter(usize);
+struct ServerHellooonCounter(u64);
 
 fn send_hellooon_system(
     dtls_server: Res<DtlsServer>, 

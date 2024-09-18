@@ -206,6 +206,10 @@ impl DtlsClient {
 
     #[inline]
     pub fn close(&mut self) {
+        if self.conn.is_none() {
+            return;
+        }
+
         self.close_send_loop();
         self.close_recv_loop();
         self.conn = None;
@@ -275,6 +279,7 @@ impl DtlsClient {
             select! {
                 biased;
 
+                Some(_) = sender.close_rx.recv() => break Ok(()),
                 Some(msg) = sender.send_rx.recv() => {
                     match timeout(
                         sender.timeout_secs(), 
@@ -282,20 +287,19 @@ impl DtlsClient {
                     ).await {
                         Ok(r) => {
                             match r {
-                                Ok(_) => (),
-                                Err(e) => break Err(anyhow!(e))
+                                Ok(n) => trace!("sent {n} bytes"),
+                                Err(e) => break Err(anyhow!("sender: {e}"))
                             }
                         }
                         Err(_) => {
                             if let Err(e) = sender.timeout_tx.send(
                                 DtlsClientTimeout::Send(msg)
                             ) {
-                                break Err(anyhow!(e));
+                                break Err(anyhow!("timeout tx: {e}"));
                             }
                         }
                     }
                 }
-                Some(_) = sender.close_rx.recv() => break Ok(()),
                 else => {
                     warn!("close send tx is closed before rx is closed");
                     break Ok(());
@@ -330,7 +334,7 @@ impl DtlsClient {
         };
 
         if let Err(e) = close_send_tx.send(DtlsClientClose) {
-            error!("close send tx is closed before set to None: {e}");
+            warn!("close send tx is closed before set to None: {e}");
         }
 
         self.close_send_tx = None;
@@ -367,15 +371,15 @@ impl DtlsClient {
             let n = select! {
                 biased;
 
+                Some(_) = recver.close_rx.recv() => break Ok(()),
                 r = recver.conn.recv(&mut buf) => {
                     match r {
                         Ok(n) => n,
-                        Err(e) => break Err(anyhow!(e))
+                        Err(e) => break Err(anyhow!("recver: {e}"))
                     }
                 }
-                Some(_) = recver.close_rx.recv() => break Ok(()),
                 else => {
-                    error!("close recv tx is closed before rx is closed");
+                    warn!("close recv tx is closed before rx is closed");
                     break Ok(());
                 }
             };
@@ -387,7 +391,7 @@ impl DtlsClient {
             }
 
             buf.resize(recver.buf_size, 0);
-            debug!("received {n}bytes");
+            trace!("received {n}bytes");
         };
 
         recver.conn.close().await?;
@@ -417,7 +421,7 @@ impl DtlsClient {
         };
 
         if let Err(e) = close_recv_tx.send(DtlsClientClose) {
-            error!("close recv tx is closed before set to None: {e}");
+            warn!("close recv tx is closed before set to None: {e}");
         }
 
         self.close_recv_tx = None;

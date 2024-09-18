@@ -8,25 +8,39 @@ use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
 use crate::DtlsSet;
 
-pub trait DtlsClientRenetExt {
-    fn start_renet_dtls(
+pub trait RenetClientDtlsExt {
+    fn start_with_dtls(
         &mut self,
-        config: DtlsClientConfig,
-        renet_client: &mut RenetClient 
+        dtls_client: &mut DtlsClient,
+        config: DtlsClientConfig
     ) -> anyhow::Result<()>;
+
+    fn disconnect_with_dtls(
+        &mut self,
+        dtls_client: &mut DtlsClient
+    );
 }
 
-impl DtlsClientRenetExt for DtlsClient {
+impl RenetClientDtlsExt for RenetClient {
     #[inline]
-    fn start_renet_dtls(
+    fn start_with_dtls(
         &mut self,
-        config: DtlsClientConfig,
-        renet_client: &mut RenetClient
+        dtls_client: &mut DtlsClient, 
+        config: DtlsClientConfig
     ) -> anyhow::Result<()> {
-        renet_client.set_connecting();
-        self.start(config)?;
-        renet_client.set_connected();
+        self.set_connecting();
+        dtls_client.start(config)?;
+        self.set_connected();
         Ok(())
+    }
+
+    #[inline]
+    fn disconnect_with_dtls(
+        &mut self,
+        dtls_client: &mut DtlsClient
+    ) {
+        self.disconnect();
+        dtls_client.close();    
     }
 }
 
@@ -34,6 +48,8 @@ fn send_system(
     mut renet_client: ResMut<RenetClient>,
     dtls_client: Res<DtlsClient>
 ) {
+    // no packets will be sent if renet server is closed before this system, 
+    // even though send_message is called on this frame    
     let packets = renet_client.get_packets_to_send();
     for pkt in packets {
         if let Err(e) = dtls_client.send(Bytes::from(pkt)) {
@@ -92,9 +108,10 @@ impl Plugin for RenetDtlsClientPlugin {
             .in_set(DtlsSet::Send)
             .run_if(resource_exists::<RenetClient>)
         )
-        .add_systems(Update, (
+        .add_systems(PostUpdate, (
             health::fatal_event_system,
             health::timeout_event_system
-        ).chain());
+        ).chain(
+        ).after(DtlsSet::Send));
     }
 }

@@ -12,7 +12,7 @@ use bevy_dtls::client::{
 };
 
 #[derive(Resource)]
-struct ClientHellooonCounter(usize);
+struct ClientHellooonCounter(u64);
 
 fn send_hellooon_system(
     dtls_client: Res<DtlsClient>, 

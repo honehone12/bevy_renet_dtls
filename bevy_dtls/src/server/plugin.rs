@@ -50,7 +50,7 @@ impl Plugin for DtlsServerPlugin {
         app.insert_resource(dtls_server)
         .add_event::<DtlsServerError>()
         .add_systems(PreUpdate, accept_system)
-        .add_systems(Update, (
+        .add_systems(PostUpdate, (
             health::fatal_event_system,
             health::timeout_event_system
         ).chain());

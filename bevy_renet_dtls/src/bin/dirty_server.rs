@@ -5,9 +5,9 @@ use std::{
 use bevy::{
     app::ScheduleRunnerPlugin, 
     log::{Level, LogPlugin}, 
-    prelude::*
+    prelude::*, utils::HashMap
 };
-use bevy_renet::{renet::{ConnectionConfig, DefaultChannel, RenetServer}, RenetServerPlugin};
+use bevy_renet::{renet::{ClientId, ConnectionConfig, DefaultChannel, RenetServer}, RenetServerPlugin};
 use bevy_dtls::server::{
     cert_option::ServerCertOption, 
     dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError
@@ -16,11 +16,14 @@ use bevy_renet_dtls::server::RenetDtlsServerPlugin;
 use bytes::Bytes;
 
 #[derive(Resource)]
-struct ServerHellooonCounter(u64);
+struct SentHellooonCounter(u64);
+
+#[derive(Resource)]
+struct ReceivedHellooonCounter(HashMap<ClientId, u64>);
 
 fn send_hellooon_system(
     mut renet_server: ResMut<RenetServer>,
-    mut counter: ResMut<ServerHellooonCounter>
+    mut counter: ResMut<SentHellooonCounter>
 ) {
     if renet_server.connected_clients() == 0 {
         return;
@@ -30,9 +33,13 @@ fn send_hellooon_system(
     let msg = Bytes::from(str);
     renet_server.broadcast_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
+    info!("broadcasted: {}", counter.0);
 }
 
-fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
+fn recv_hellooon_system(
+    mut renet_server: ResMut<RenetServer>,
+    mut counter: ResMut<ReceivedHellooonCounter>
+) {
     let ch_len = 3_u8;
     let clients = renet_server.clients_id();
 
@@ -44,7 +51,17 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
                 };
     
                 let msg = String::from_utf8(bytes.to_vec()).unwrap();
-                info!("message from: {client_id}: {msg}");
+                
+                let count = counter.0.entry(client_id)
+                .or_default();
+                *count += 1;
+
+                info!("message from: {client_id}: {msg}: {count}");
+
+                if *count >= 10 {
+                    warn!("disconnecting: {client_id:?}");
+                    renet_server.disconnect(client_id);
+                }
             }
         }
     }    
@@ -52,7 +69,12 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
 
 fn handle_net_error(mut errors: EventReader<DtlsServerError>) {
     for e in errors.read() {
-        error!("{e:?}");
+        match e {
+            DtlsServerError::SendTimeout { .. } => error!("{e:?}"),
+            DtlsServerError::RecvTimeout { .. } => error!("{e:?}"),
+            DtlsServerError::Fatal { .. } => panic!("{e:?}"),
+            DtlsServerError::ConnFatal { .. } => panic!("{e:?}"),
+        }
     }
 }
 
@@ -76,11 +98,12 @@ impl Plugin for ServerPlugin {
 
         let renet_server = RenetServer::new(ConnectionConfig::default());
         app.insert_resource(renet_server)
-        .insert_resource(ServerHellooonCounter(0))
+        .insert_resource(SentHellooonCounter(0))
+        .insert_resource(ReceivedHellooonCounter(default()))
         .add_systems(Update, (
             handle_net_error,
-            recv_hellooon_system,
-            send_hellooon_system
+            send_hellooon_system,
+            recv_hellooon_system
         ).chain());
 
         info!(
@@ -98,13 +121,13 @@ fn main() {
             Duration::from_secs_f32(1.0 / 30.0)
         )),
         LogPlugin{
-            level: Level::INFO,
+            level: Level::DEBUG,
             ..default()
         },
         RenetServerPlugin,
         RenetDtlsServerPlugin{
             max_clients: 1,
-            buf_size: 512,
+            buf_size: 1500,
             send_timeout_secs: 10,
             recv_timeout_secs: None
         }

@@ -467,15 +467,15 @@ impl DtlsServer {
             let (conn, addr) = select! {
                 biased;
 
+                Some(_) = acpter.close_rx.recv() => break Ok(()),
                 r = acpter.listener.accept() => {
                     match r {
                         Ok(ca) => ca,
-                        Err(e) => break Err(anyhow!(e)),
+                        Err(e) => break Err(anyhow!("listener: {e}")),
                     }
                 }
-                Some(_) = acpter.close_rx.recv() => break Ok(()),
                 else => {
-                    error!("close acpt tx is dropped before rx is closed");
+                    warn!("close acpt tx is dropped before rx is closed");
                     break Ok(());
                 }
             };
@@ -533,7 +533,7 @@ impl DtlsServer {
         };
 
         if let Err(e) = close_acpt_tx.send(DtlsServerClose) {
-            error!("close listener tx is closed before set to None: {e}");
+            warn!("close listener tx is closed before set to None: {e}");
         }
 
         self.close_acpt_tx = None;
@@ -585,23 +585,23 @@ impl DtlsServer {
             let (n, addr) = select! {
                 biased;
 
+                Some(_) = recver.close_rx.recv() => break Ok(()),
                 r = recver.conn.recv_from(&mut buf) => {
                     match r {
                         Ok(na) => na,
-                        Err(e) => break Err(anyhow!(e))
+                        Err(e) => break Err(anyhow!("recver conn: {e}"))
                     }
                 }
-                Some(_) = recver.close_rx.recv() => break Ok(()),
                 () = sleep(timeout_dur) => {
                     if let Err(e) = recver.timeout_tx.send(
                         DtlsServerTimeout::Recv(recver.conn_idx)
                     ) {
-                        break Err(anyhow!(e));
+                        break Err(anyhow!("timeout tx {e}"));
                     }
                     continue;
                 }
                 else => {
-                    error!(
+                    warn!(
                         "close recv tx: {} is closed before rx is closed", 
                         recver.conn_idx.0
                     );
@@ -616,7 +616,7 @@ impl DtlsServer {
             }
 
             buf.resize(recver.buf_size, 0);
-            debug!("received {n}bytes from {}:{addr}", recver.conn_idx.0);
+            trace!("received {n}bytes from {}:{addr}", recver.conn_idx.0);
         };
 
         recver.conn.close().await?;
@@ -694,6 +694,7 @@ impl DtlsServer {
             select! {
                 biased;
 
+                Some(_) = sender.close_rx.recv() => break Ok(()),
                 Some(msg) = sender.send_rx.recv() => {
                     match timeout(
                         sender.timeout_secs(),
@@ -701,8 +702,8 @@ impl DtlsServer {
                     ).await {
                         Ok(r) => {
                             match r {
-                                Ok(_) => (),
-                                Err(e) => break Err(anyhow!(e))
+                                Ok(n) => trace!("sent {n} bytes to {:?}", sender.conn_idx),
+                                Err(e) => break Err(anyhow!("sender conn: {e}"))
                             }
                         }
                         Err(_) => {
@@ -710,12 +711,11 @@ impl DtlsServer {
                                 conn_index: sender.conn_idx, 
                                 bytes: msg 
                             }) {
-                                break Err(anyhow!(e));
+                                break Err(anyhow!("timeout tx: {e}"));
                             }
                         }
                     }
                 }
-                Some(_) = sender.close_rx.recv() => break Ok(()),
                 else => {
                     warn!(
                         "close send tx: {} is closed before rx is closed", 

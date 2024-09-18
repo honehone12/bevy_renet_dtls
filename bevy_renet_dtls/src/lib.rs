@@ -2,7 +2,6 @@ pub mod server;
 pub mod client;
 
 pub use bevy_dtls as dtls;
-
 use bevy::prelude::SystemSet;
 use bevy_renet::renet::ClientId;
 use bevy_dtls::server::dtls_server::ConnIndex;

@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::anyhow;
 use bevy::prelude::*;
 use bytes::Bytes;
 use super::dtls_server::{ConnIndex, DtlsServer, DtlsServerTimeout};
@@ -52,25 +52,25 @@ pub fn fatal_event_system(
 ) {
     let health = dtls_server.health_check();
     if let Some(r) = health.listener {
-        if let Err(e) = r.context("fatal error from listener") {
+        if let Err(e) = r {
             errors.send(DtlsServerError::Fatal { 
-                err: e 
+                err: anyhow!("fatal error from listener: {e}")
             });
         }
     }
     for (idx, r) in health.sender {
-        if let Err(e) = r.context("fatal error from sender") {
+        if let Err(e) = r {
             errors.send(DtlsServerError::ConnFatal { 
                 conn_index: idx, 
-                err: e 
+                err: anyhow!("fatal error from sender: {e}")
             });
         }
     }
     for (idx, r) in health.recver {
-        if let Err(e) = r.context("fatal error from recver") {
+        if let Err(e) = r {
             errors.send(DtlsServerError::ConnFatal { 
                 conn_index: idx, 
-                err: e 
+                err: anyhow!("fatal error from recver: {e}")
             });
         }
     }

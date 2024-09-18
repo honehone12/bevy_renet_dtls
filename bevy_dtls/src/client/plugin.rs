@@ -25,7 +25,7 @@ impl Plugin for DtlsClientPlugin {
 
         app.insert_resource(dtls_client)
         .add_event::<DtlsClientError>()
-        .add_systems(Update, (
+        .add_systems(PostUpdate, (
             health::fatal_event_system,
             health::timeout_event_system
         ).chain());
