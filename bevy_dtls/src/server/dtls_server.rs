@@ -1,5 +1,8 @@
 use std::{
-    collections::HashMap, net::IpAddr, sync::{Arc, RwLock as StdRwLock}, time::Duration
+    collections::HashMap, 
+    net::IpAddr, 
+    sync::{Arc, RwLock as StdRwLock}, 
+    time::Duration
 };
 use anyhow::{anyhow, bail};
 use bevy::{
@@ -370,13 +373,13 @@ impl DtlsServer {
         
         if let Some(close_recv_tx) = dtls_conn.close_recv_tx {
             if let Err(e) = close_recv_tx.send(DtlsServerClose) {
-                error!("close recv tx: {conn_index} is closed before set to None: {e}");
+                warn!("close recv tx: {conn_index} is closed before set to None: {e}");
             }    
         };
 
         if let Some(close_send_tx) = dtls_conn.close_send_tx {
             if let Err(e) = close_send_tx.send(DtlsServerClose) {
-                error!("close recv tx: {conn_index} is closed before set to None: {e}");
+                warn!("close recv tx: {conn_index} is closed before set to None: {e}");
             }
         }
     }

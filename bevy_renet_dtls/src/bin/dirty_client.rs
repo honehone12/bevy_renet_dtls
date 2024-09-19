@@ -17,12 +17,22 @@ struct ClientHellooonCounter(u64);
 
 fn send_hellooon_system(
     mut renet_client: ResMut<RenetClient>,
+    mut dtls_client: ResMut<DtlsClient>,
     mut counter: ResMut<ClientHellooonCounter>
 ) {
+    if renet_client.is_disconnected() {
+        return;
+    }
+
     let str = format!("from client helloooooon {}", counter.0);
     let msg = Bytes::from(str);
     renet_client.send_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
+
+    if counter.0 % 10 == 0 {
+        warn!("disconnecting");
+        renet_client.disconnect_with_dtls(&mut dtls_client);
+    }
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {

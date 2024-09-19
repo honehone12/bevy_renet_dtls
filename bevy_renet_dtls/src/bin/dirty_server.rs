@@ -12,7 +12,7 @@ use bevy_dtls::server::{
     cert_option::ServerCertOption, 
     dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError
 };
-use bevy_renet_dtls::server::RenetDtlsServerPlugin;
+use bevy_renet_dtls::{server::RenetDtlsServerPlugin, ToRenetClientId};
 use bytes::Bytes;
 
 #[derive(Resource)]
@@ -54,11 +54,11 @@ fn recv_hellooon_system(
                 
                 let count = counter.0.entry(client_id)
                 .or_default();
-                *count += 1;
-
+            
                 info!("message from: {client_id}: {msg}: {count}");
-
-                if *count >= 10 {
+                
+                *count += 1;
+                if *count > 100  {
                     warn!("disconnecting: {client_id:?}");
                     renet_server.disconnect(client_id);
                 }
@@ -67,13 +67,24 @@ fn recv_hellooon_system(
     }    
 }
 
-fn handle_net_error(mut errors: EventReader<DtlsServerError>) {
+fn handle_net_error(
+    mut errors: EventReader<DtlsServerError>,
+    mut renet_server: ResMut<RenetServer>
+) {
     for e in errors.read() {
         match e {
             DtlsServerError::SendTimeout { .. } => error!("{e:?}"),
             DtlsServerError::RecvTimeout { .. } => error!("{e:?}"),
             DtlsServerError::Fatal { .. } => panic!("{e:?}"),
-            DtlsServerError::ConnFatal { .. } => panic!("{e:?}"),
+            DtlsServerError::ConnFatal { conn_index, err } => {
+                if err.to_string().ends_with("Alert is Fatal or Close Notify") {
+                    warn!("client: {conn_index:?} disconnected: {err}");
+                } else {
+                    error!("{err}: disconnecting");
+                }
+
+                renet_server.disconnect(conn_index.renet_client_id());
+            }
         }
     }
 }
