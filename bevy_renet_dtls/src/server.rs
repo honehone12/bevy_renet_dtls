@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_renet::{renet::RenetServer, RenetReceive, RenetSend};
 use bevy_dtls::server::{
     dtls_server::DtlsServer, 
-    health::{self, DtlsServerError}
+    health::{self, DtlsServerError, DtlsServerClosed}
 };
 use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
@@ -14,7 +14,7 @@ fn clean_system(
 ) {
     let dis_conns = renet_server.disconnections_id();
     for dis_conn in dis_conns {
-        dtls_server.close_conn(dis_conn.raw());
+        dtls_server.disconnect(dis_conn.raw());
         debug!("cleaning: {dis_conn:?}, removed from dtls server");
         renet_server.remove_connection(dis_conn);
         debug!("cleaning: {dis_conn:?}, removed from renet server");
@@ -121,6 +121,7 @@ impl Plugin for RenetDtlsServerPlugin {
 
         app.insert_resource(dtls_server)
         .add_event::<DtlsServerError>()
+        .add_event::<DtlsServerClosed>()
         .configure_sets(PreUpdate, DtlsSet::Recv.before(RenetReceive))
         .configure_sets(PreUpdate, DtlsSet::Acpt.before(DtlsSet::Recv))
         .configure_sets(PostUpdate, DtlsSet::Send.after(RenetSend))

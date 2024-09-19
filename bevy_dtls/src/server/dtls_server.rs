@@ -265,6 +265,11 @@ impl DtlsServer {
     }
 
     #[inline]
+    pub fn restart(&mut self) -> anyhow::Result<()> {
+        self.start_acpt_loop()
+    }
+
+    #[inline]
     pub fn start_conn(&mut self, conn_index: ConnIndex)
     -> anyhow::Result<()> {
         self.start_recv_loop(conn_index)?;
@@ -364,7 +369,7 @@ impl DtlsServer {
         }
     }
 
-    pub fn close_conn(&mut self, conn_index: u64) {
+    pub fn disconnect(&mut self, conn_index: u64) {
         let mut w = self.conn_map.write()
         .unwrap();
         let Some(dtls_conn) = w.remove(&conn_index) else {
@@ -384,7 +389,7 @@ impl DtlsServer {
         }
     }
 
-    pub fn close_all(&mut self) {
+    pub fn disconnect_all(&mut self) {
         let ks: Vec<u64> = {
             self.conn_map.read()
             .unwrap()
@@ -394,14 +399,25 @@ impl DtlsServer {
         };
 
         for k in ks {
-            self.close_conn(k);
+            self.disconnect(k);
         }
+    }
 
+    pub fn stop(&mut self) {
+        // listener is not closed by this function
         self.close_acpt_loop();
         self.recv_tx = None;
         self.recv_rx = None;
         self.timeout_tx = None;
         self.timeout_rx = None;
+    }
+
+    pub fn close_on_shutdown(&mut self) {
+        let Some(l) = self.listener.take() else {
+            return;
+        };
+
+        _ = future::block_on(self.runtime.spawn(async move {l.close().await}));
     }
 
     fn start_listen(&mut self, config: DtlsServerConfig) 
@@ -410,13 +426,6 @@ impl DtlsServer {
             self.runtime.spawn(Self::listen(config))
         )??;
         self.listener = Some(listener);
-
-        let (recv_tx, recv_rx) = tokio_channel::<(ConnIndex, Bytes)>();
-        self.recv_tx = Some(recv_tx);
-        self.recv_rx = Some(recv_rx);
-        let (timeout_tx, timeout_rx) = tokio_channel::<DtlsServerTimeout>();
-        self.timeout_tx = Some(timeout_tx);
-        self.timeout_rx = Some(timeout_rx);
 
         Ok(())
     }
@@ -437,6 +446,13 @@ impl DtlsServer {
         if self.acpt_handle.is_some() {
             bail!("join handle exists, or health_check is not called");
         }
+
+        let (recv_tx, recv_rx) = tokio_channel::<(ConnIndex, Bytes)>();
+        self.recv_tx = Some(recv_tx);
+        self.recv_rx = Some(recv_rx);
+        let (timeout_tx, timeout_rx) = tokio_channel::<DtlsServerTimeout>();
+        self.timeout_tx = Some(timeout_tx);
+        self.timeout_rx = Some(timeout_rx);
 
         let (
             acpt_rx,
@@ -510,7 +526,6 @@ impl DtlsServer {
             debug!("conn from {addr} accepted");
         };
 
-        acpter.listener.close().await?;
         debug!("dtls server listener is closed");
         result
     }
@@ -541,7 +556,6 @@ impl DtlsServer {
 
         self.close_acpt_tx = None;
         self.acpt_rx = None;
-        self.listener = None;
     }
 
     fn start_recv_loop(&self, conn_idx: ConnIndex) 

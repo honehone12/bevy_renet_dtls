@@ -17,7 +17,7 @@ struct ClientHellooonCounter(u64);
 
 fn send_hellooon_system(
     mut renet_client: ResMut<RenetClient>,
-    mut dtls_client: ResMut<DtlsClient>,
+    // mut dtls_client: ResMut<DtlsClient>,
     mut counter: ResMut<ClientHellooonCounter>
 ) {
     if renet_client.is_disconnected() {
@@ -29,10 +29,10 @@ fn send_hellooon_system(
     renet_client.send_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
 
-    if counter.0 % 10 == 0 {
-        warn!("disconnecting");
-        renet_client.disconnect_with_dtls(&mut dtls_client);
-    }
+    // if counter.0 % 10 == 0 {
+    //     warn!("disconnecting");
+    //     renet_client.disconnect_with_dtls(&mut dtls_client);
+    // }
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
@@ -67,13 +67,7 @@ fn handle_net_error(
     }
 }
 
-struct ClientPlugin {
-    server_addr: IpAddr,
-    server_port: u16,
-    client_addr: IpAddr,
-    client_port: u16,
-    cert_option: ClientCertOption
-}
+struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
@@ -84,11 +78,14 @@ impl Plugin for ClientPlugin {
         if let Err(e) = renet_client.start_with_dtls(
             &mut dtls_client,
             DtlsClientConfig{
-                server_addr: self.server_addr,
-                server_port: self.server_port,
-                client_addr: self.client_addr,
-                client_port: self.client_port,
-                cert_option: self.cert_option,
+                server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                server_port: 4443,
+                client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                client_port: 0,
+                cert_option: ClientCertOption::Load { 
+                    server_name: "webrtc.rs",
+                    root_ca_path: "my_certificates/server.pub.pem" 
+                }
             }
         ) {
             panic!("{e}");
@@ -119,17 +116,6 @@ fn main() {
             buf_size: 1500
         }
     ))
-    .add_plugins(
-        ClientPlugin{
-            server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-            server_port: 4443,
-            client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-            client_port: 0,
-            cert_option: ClientCertOption::Load { 
-                server_name: "webrtc.rs",
-                root_ca_path: "my_certificates/server.pub.pem" 
-            }
-        }
-    )
+    .add_plugins(ClientPlugin)
     .run();
 }

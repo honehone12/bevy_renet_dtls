@@ -21,6 +21,9 @@ pub enum DtlsServerError {
     }
 }
 
+#[derive(Event)]
+pub struct DtlsServerClosed;
+
 pub fn timeout_event_system(
     mut dtls_server: ResMut<DtlsServer>,
     mut errors: EventWriter<DtlsServerError>
@@ -48,7 +51,8 @@ pub fn timeout_event_system(
 
 pub fn fatal_event_system(
     mut dtls_server: ResMut<DtlsServer>,
-    mut errors: EventWriter<DtlsServerError>
+    mut errors: EventWriter<DtlsServerError>,
+    mut closed: EventWriter<DtlsServerClosed>
 ) {
     let health = dtls_server.health_check();
     if let Some(r) = health.listener {
@@ -57,6 +61,7 @@ pub fn fatal_event_system(
                 err: anyhow!("fatal error from listener: {e}")
             });
         }
+        closed.send(DtlsServerClosed);
     }
     for (idx, r) in health.sender {
         if let Err(e) = r {
