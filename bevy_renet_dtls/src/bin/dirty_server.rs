@@ -108,7 +108,7 @@ fn handle_net_error(
                 // better way to get this specific error ??
                 if err.to_string()
                 .ends_with("Alert is Fatal or Close Notify") {
-                    warn!("client: {conn_index:?} disconnected: {err}");
+                    warn!("client {conn_index:?} disconnected: {err}");
                 } else {
                     error!("{err}: disconnecting");
                 }
