@@ -309,14 +309,14 @@ impl DtlsClient {
                         Ok(r) => {
                             match r {
                                 Ok(n) => trace!("sent {n} bytes"),
-                                Err(e) => break Err(anyhow!("sender: {e}"))
+                                Err(e) => break Err(anyhow!(e))
                             }
                         }
                         Err(_) => {
                             if let Err(e) = sender.timeout_tx.send(
                                 DtlsClientTimeout::Send(msg)
                             ) {
-                                break Err(anyhow!("timeout tx: {e}"));
+                                break Err(anyhow!(e));
                             }
                         }
                     }
@@ -396,7 +396,7 @@ impl DtlsClient {
                 r = recver.conn.recv(&mut buf) => {
                     match r {
                         Ok(n) => n,
-                        Err(e) => break Err(anyhow!("recver: {e}"))
+                        Err(e) => break Err(anyhow!(e))
                     }
                 }
                 else => {

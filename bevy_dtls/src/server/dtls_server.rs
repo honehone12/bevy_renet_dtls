@@ -514,7 +514,7 @@ impl DtlsServer {
                 r = acpter.listener.accept() => {
                     match r {
                         Ok(ca) => ca,
-                        Err(e) => break Err(anyhow!("listener: {e}")),
+                        Err(e) => break Err(anyhow!(e)),
                     }
                 }
                 else => {
@@ -587,7 +587,7 @@ impl DtlsServer {
         let mut w = self.conn_map.write()
         .unwrap();
         let Some(dtls_conn) = w.get_mut(&conn_idx.0) else {
-            bail!("dtls conn: {} is None", conn_idx.0);
+            bail!("dtls conn {conn_idx:?} is None");
         };
 
         if dtls_conn.recv_handle.is_some() {
@@ -614,7 +614,7 @@ impl DtlsServer {
         let handle = self.runtime.spawn(Self::recv_loop(recver));
         dtls_conn.recv_handle = Some(handle);
         
-        debug!("recv loop: {} has started", conn_idx.0);
+        debug!("recv loop {conn_idx:?} has started");
         Ok(())
     }
 
@@ -630,21 +630,21 @@ impl DtlsServer {
                 r = recver.conn.recv_from(&mut buf) => {
                     match r {
                         Ok(na) => na,
-                        Err(e) => break Err(anyhow!("recver conn: {e}"))
+                        Err(e) => break Err(anyhow!("conn {:?}: {e}", recver.conn_idx))
                     }
                 }
                 () = sleep(timeout_dur) => {
                     if let Err(e) = recver.timeout_tx.send(
                         DtlsServerTimeout::Recv(recver.conn_idx)
                     ) {
-                        break Err(anyhow!("timeout tx {e}"));
+                        break Err(anyhow!("conn {:?}: {e}", recver.conn_idx));
                     }
                     continue;
                 }
                 else => {
                     warn!(
-                        "close recv tx: {} is closed before rx is closed", 
-                        recver.conn_idx.0
+                        "close recv tx {:?} is closed before rx is closed", 
+                        recver.conn_idx
                     );
                     break Ok(());
                 }
@@ -657,11 +657,11 @@ impl DtlsServer {
             }
 
             buf.resize(recver.buf_size, 0);
-            trace!("received {n}bytes from {}:{addr}", recver.conn_idx.0);
+            trace!("received {n}bytes from {:?}:{addr}", recver.conn_idx);
         };
 
         recver.conn.close().await?;
-        debug!("dtls server recv loop: {} is closed", recver.conn_idx.0);
+        debug!("dtls server recv loop: {:?} is closed", recver.conn_idx);
         result
     }
 
@@ -703,7 +703,7 @@ impl DtlsServer {
         let mut w = self.conn_map.write()
         .unwrap();
         let Some(dtls_conn) = w.get_mut(&conn_idx.0) else {
-            bail!("dtls conn: {} is None", conn_idx.0);
+            bail!("dtls conn: {conn_idx:?} is None");
         };
 
         if dtls_conn.send_handle.is_some() {
@@ -726,7 +726,7 @@ impl DtlsServer {
         let handle = self.runtime.spawn(Self::send_loop(sender));
         dtls_conn.send_handle = Some(handle);
 
-        debug!("send loop: {} has started", conn_idx.0);
+        debug!("send loop {conn_idx:?} has started");
         Ok(())
     }
 
@@ -744,7 +744,7 @@ impl DtlsServer {
                         Ok(r) => {
                             match r {
                                 Ok(n) => trace!("sent {n} bytes to {:?}", sender.conn_idx),
-                                Err(e) => break Err(anyhow!("sender conn: {e}"))
+                                Err(e) => break Err(anyhow!("conn {:?}: {e}", sender.conn_idx))
                             }
                         }
                         Err(_) => {
@@ -752,15 +752,15 @@ impl DtlsServer {
                                 conn_index: sender.conn_idx, 
                                 bytes: msg 
                             }) {
-                                break Err(anyhow!("timeout tx: {e}"));
+                                break Err(anyhow!("conn {:?}: {e}", sender.conn_idx));
                             }
                         }
                     }
                 }
                 else => {
                     warn!(
-                        "close send tx: {} is closed before rx is closed", 
-                        sender.conn_idx.0
+                        "close send tx {:?} is closed before rx is closed", 
+                        sender.conn_idx
                     );
                     break Ok(());
                 }
@@ -768,7 +768,7 @@ impl DtlsServer {
         };
 
         sender.conn.close().await?;
-        debug!("dtls server send loop: {} is closed", sender.conn_idx.0);
+        debug!("dtls server send loop {:?} is closed", sender.conn_idx);
         result
     }
 
