@@ -166,7 +166,7 @@ fn main() {
     App::new()
     .add_plugins((
         DefaultPlugins.set(LogPlugin{
-            level: Level::DEBUG,
+            level: Level::INFO,
             ..default()
         }),
         RenetClientPlugin,

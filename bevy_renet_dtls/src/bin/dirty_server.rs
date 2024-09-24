@@ -174,7 +174,7 @@ fn main() {
             Duration::from_secs_f32(1.0 / 30.0)
         )),
         LogPlugin{
-            level: Level::DEBUG,
+            level: Level::INFO,
             ..default()
         },
         RenetServerPlugin,
