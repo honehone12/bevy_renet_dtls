@@ -9,13 +9,13 @@ use rustls::crypto::aws_lc_rs;
 use crate::DtlsSet;
 
 pub trait RenetClientDtlsExt {
-    fn start_with_dtls(
+    fn start_dtls(
         &mut self,
         dtls_client: &mut DtlsClient,
         config: DtlsClientConfig
     ) -> anyhow::Result<()>;
 
-    fn disconnect_with_dtls(
+    fn disconnect_dtls(
         &mut self,
         dtls_client: &mut DtlsClient
     );
@@ -23,7 +23,7 @@ pub trait RenetClientDtlsExt {
 
 impl RenetClientDtlsExt for RenetClient {
     #[inline]
-    fn start_with_dtls(
+    fn start_dtls(
         &mut self,
         dtls_client: &mut DtlsClient, 
         config: DtlsClientConfig
@@ -35,7 +35,7 @@ impl RenetClientDtlsExt for RenetClient {
     }
 
     #[inline]
-    fn disconnect_with_dtls(
+    fn disconnect_dtls(
         &mut self,
         dtls_client: &mut DtlsClient
     ) {
@@ -48,6 +48,10 @@ fn send_system(
     mut renet_client: ResMut<RenetClient>,
     dtls_client: Res<DtlsClient>
 ) {
+    if dtls_client.is_closed() {
+        return;
+    }
+
     // no packets will be sent if renet server is closed before this system, 
     // even though send_message is called on this frame    
     let packets = renet_client.get_packets_to_send();
@@ -67,6 +71,10 @@ fn recv_system(
     mut renet_client: ResMut<RenetClient>,
     mut dtls_client: ResMut<DtlsClient>
 ) {
+    if dtls_client.is_closed() {
+        return;
+    }
+
     loop {
         let Some(bytes) = dtls_client.recv() else {
             return;

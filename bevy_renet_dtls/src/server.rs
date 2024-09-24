@@ -12,6 +12,10 @@ fn clean_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>
 ) {
+    if dtls_server.is_closed() {
+        return;
+    }
+
     let dis_conns = renet_server.disconnections_id();
     for dis_conn in dis_conns {
         dtls_server.disconnect(dis_conn.raw());
@@ -25,6 +29,10 @@ fn acpt_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>
 ) {
+    if dtls_server.is_closed() {
+        return;
+    }
+
     loop {
         let Some(conn_idx) = dtls_server.acpt() else {
             return;
@@ -52,6 +60,10 @@ fn recv_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>
 ) {
+    if dtls_server.is_closed() {
+        return;
+    }
+
     loop {
         let Some((conn_idx, bytes)) = dtls_server.recv() else {
             return;
@@ -74,6 +86,10 @@ fn send_system(
     mut renet_server: ResMut<RenetServer>,
     dtls_server: Res<DtlsServer>
 ) {
+    if dtls_server.is_closed() {
+        return;
+    }
+
     let clients = renet_server.clients_id();
     'client_loop: for client_id in clients {
         // no packets will be sent if renet server is closed before this system, 

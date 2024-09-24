@@ -15,10 +15,15 @@ use bytes::Bytes;
 #[derive(Resource)]
 struct ClientHellooonCounter(u64);
 
+#[derive(Resource)]
+struct Restart(bool, u64);
+
 fn send_hellooon_system(
+    mut commands: Commands,
     mut renet_client: ResMut<RenetClient>,
-    // mut dtls_client: ResMut<DtlsClient>,
-    mut counter: ResMut<ClientHellooonCounter>
+    mut dtls_client: ResMut<DtlsClient>,
+    mut counter: ResMut<ClientHellooonCounter>,
+    mut restart: ResMut<Restart>
 ) {
     if renet_client.is_disconnected() {
         return;
@@ -29,10 +34,22 @@ fn send_hellooon_system(
     renet_client.send_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
 
-    // if counter.0 % 10 == 0 {
-    //     warn!("disconnecting");
-    //     renet_client.disconnect_with_dtls(&mut dtls_client);
-    // }
+    if counter.0 % 10 != 0 {
+        return;
+    }
+
+    if restart.0 {
+        return;
+    }
+
+    warn!("disconnecting. will restart soon...");
+    // disconnect dtls and close renet
+    renet_client.disconnect_dtls(&mut dtls_client);
+    // remove renet client for renewal
+    commands.remove_resource::<RenetClient>();
+    
+    restart.0 = true;
+    restart.1 = 0;
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
@@ -50,19 +67,57 @@ fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
     }
 }
 
-fn handle_net_error(
-    mut renet_client: ResMut<RenetClient>,
+fn handle_restart(
+    mut commands: Commands,
     mut dtls_client: ResMut<DtlsClient>,
+    mut restart: ResMut<Restart>
+) {
+    if !restart.0 {
+        return;
+    }
+
+    if !dtls_client.is_closed() {
+        return;
+    }
+
+    // we have to wait a sec for server cleaning up, so
+    // i just want spend some time here
+    restart.1 += 1;
+    if restart.1 <= 100 {
+        return;
+    }
+
+    info!("restarting...");
+    // insert new renet client
+    let mut new_renet = RenetClient::new(ConnectionConfig::default());
+    if let Err(e) = new_renet.start_dtls(
+        &mut dtls_client,
+        DtlsClientConfig{
+            server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server_port: 4443,
+            client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            client_port: 0,
+            cert_option: ClientCertOption::Load { 
+                server_name: "webrtc.rs",
+                root_ca_path: "my_certificates/server.pub.pem" 
+            }
+        }
+    ) {
+        panic!("{e}");
+    }
+
+    commands.insert_resource(new_renet);
+    restart.0 = false;
+    restart.1 = 0;
+}
+
+fn handle_net_error(
     mut errors: EventReader<DtlsClientError>
 ) {
     for e in errors.read() {
         match e {
             DtlsClientError::SendTimeout { .. } => error!("{e:?}"),
-            DtlsClientError::Fatal { err } => {
-                error!("{err}: disconnecting");
-
-                renet_client.disconnect_with_dtls(&mut dtls_client);
-            }
+            DtlsClientError::Fatal { .. } => error!("{e:?}")
         }
     }
 }
@@ -75,7 +130,7 @@ impl Plugin for ClientPlugin {
         let mut dtls_client = app.world_mut()
         .resource_mut::<DtlsClient>();
 
-        if let Err(e) = renet_client.start_with_dtls(
+        if let Err(e) = renet_client.start_dtls(
             &mut dtls_client,
             DtlsClientConfig{
                 server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -93,10 +148,14 @@ impl Plugin for ClientPlugin {
 
         app.insert_resource(renet_client)
         .insert_resource(ClientHellooonCounter(0))
+        .insert_resource(Restart(false, 0))
         .add_systems(Update, (
             handle_net_error,
-            send_hellooon_system,
+            send_hellooon_system
+            .run_if(resource_exists::<RenetClient>),
             recv_hellooon_system
+            .run_if(resource_exists::<RenetClient>),
+            handle_restart
         ).chain());
 
         info!("client connected");

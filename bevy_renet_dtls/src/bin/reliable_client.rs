@@ -60,7 +60,7 @@ impl Plugin for ClientPlugin {
         let mut dtls_client = app.world_mut()
         .resource_mut::<DtlsClient>();
 
-        if let Err(e) = renet_client.start_with_dtls(
+        if let Err(e) = renet_client.start_dtls(
             &mut dtls_client,
             DtlsClientConfig{
                 server_addr: self.server_addr,

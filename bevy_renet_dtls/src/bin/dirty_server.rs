@@ -27,10 +27,16 @@ struct ReceivedHellooonCounter(HashMap<ClientId, u64>);
 
 fn send_hellooon_system(
     mut renet_server: ResMut<RenetServer>,
-    mut dtls_server: ResMut<DtlsServer>,
+    dtls_server: Res<DtlsServer>,
     mut counter: ResMut<SentHellooonCounter>
 ) {
-    if renet_server.connected_clients() == 0 {
+    let renet_len = renet_server.connected_clients();
+    let dtls_len = dtls_server.connected_clients();
+    
+    if renet_len != dtls_len {
+        warn!("connected clients mismatch, renet: {renet_len}, dtls: {dtls_len}");
+    }
+    if renet_len == 0 {
         return;
     }
 
@@ -40,12 +46,12 @@ fn send_hellooon_system(
     counter.0 += 1;
     info!("broadcasted: {}", counter.0);
 
-    if counter.0 > 10 {
-        warn!("disconnecting all");
-        renet_server.disconnect_all();
-        dtls_server.stop();
-        counter.0 = 0;
-    }
+    // if counter.0 > 10 {
+    //     warn!("disconnecting all");
+    //     renet_server.disconnect_all();
+    //     dtls_server.stop();
+    //     counter.0 = 0;
+    // }
 }
 
 fn recv_hellooon_system(
@@ -84,9 +90,20 @@ fn handle_net_error(
 ) {
     for e in errors.read() {
         match e {
-            DtlsServerError::SendTimeout { .. } => error!("{e:?}"),
-            DtlsServerError::RecvTimeout { .. } => error!("{e:?}"),
-            DtlsServerError::Fatal { .. } => error!("{e:?}"),
+            DtlsServerError::SendTimeout { conn_index, .. } => {
+                warn!("send timeout: disconnecting");
+                renet_server.disconnect(conn_index.renet_client_id());
+            }
+            DtlsServerError::RecvTimeout { conn_index } => {
+                warn!("recv timeout: disconnecting");
+                renet_server.disconnect(conn_index.renet_client_id());
+            }
+            DtlsServerError::Fatal { err } => {
+                // i found duplicate binding error event after
+                // closing listener. i will try again later but
+                // all i can do for now is just panic
+                panic!("{err}");
+            }
             DtlsServerError::ConnFatal { conn_index, err } => {
                 // better way to get this specific error ??
                 if err.to_string()
@@ -102,11 +119,11 @@ fn handle_net_error(
     }
 }
 
-fn handle_restart(
+fn handle_closed(
     mut dtls_server: ResMut<DtlsServer>,
-    mut restart: EventReader<DtlsServerClosed>
+    mut closed: EventReader<DtlsServerClosed>
 ) {
-    for _ in restart.read() {
+    for _ in closed.read() {
         if let Err(e) = dtls_server.restart() {
             panic!("{e}");
         }
@@ -138,9 +155,12 @@ impl Plugin for ServerPlugin {
         .insert_resource(ReceivedHellooonCounter(default()))
         .add_systems(Update, (
             handle_net_error,
-            send_hellooon_system,
-            recv_hellooon_system,
-            handle_restart
+            send_hellooon_system
+            .run_if(resource_exists::<RenetServer>),
+            recv_hellooon_system
+            .run_if(resource_exists::<RenetServer>),
+            handle_closed
+            .run_if(resource_exists::<RenetServer>),
         ).chain());
 
         info!("server is started");
@@ -161,8 +181,8 @@ fn main() {
         RenetDtlsServerPlugin{
             max_clients: 1,
             buf_size: 1500,
-            send_timeout_secs: 10,
-            recv_timeout_secs: None
+            send_timeout_secs: 1,
+            recv_timeout_secs: Some(1)
         }
     ))
     .add_plugins(ServerPlugin)

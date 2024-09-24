@@ -133,7 +133,7 @@ fn read_cli(
                 ..Default::default()
             });
             
-            client.start_with_dtls(
+            client.start_dtls(
                 &mut client_transport,
                 DtlsClientConfig{
                     server_addr: ip,

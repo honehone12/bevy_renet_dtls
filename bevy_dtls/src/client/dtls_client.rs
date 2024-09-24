@@ -145,8 +145,26 @@ impl DtlsClient {
     }
 
     #[inline]
+    pub fn is_closed(&self) -> bool {
+        self.conn.is_none() 
+        && self.recv_handle.is_none()
+        && self.send_handle.is_none()
+    }
+
     pub fn start(&mut self, config: DtlsClientConfig) 
     -> anyhow::Result<()> {
+        debug_assert!(
+            self.send_tx.is_none()
+            && self.send_timeout_rx.is_none()
+            && self.close_send_tx.is_none()
+            && self.recv_rx.is_none()
+            && self.close_recv_tx.is_none()
+        );
+
+        if !self.is_closed() {
+            bail!("dtls client is not closed");
+        }
+
         self.start_connect(config)?;
         self.start_send_loop()?;
         self.start_recv_loop()

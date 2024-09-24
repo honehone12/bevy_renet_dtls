@@ -252,14 +252,35 @@ impl DtlsServer {
     }
 
     #[inline]
-    pub fn clients_len(&self) -> usize {
+    pub fn is_closed(&self) -> bool {
+        self.listener.is_none()
+        && self.acpt_handle.is_none()
+        && self.conn_map.read()
+        .unwrap()
+        .is_empty()
+    }
+
+    #[inline]
+    pub fn connected_clients(&self) -> usize {
         let r = self.conn_map.read().unwrap();
         r.len()
     }
 
-    #[inline]
     pub fn start(&mut self, config: DtlsServerConfig)
     -> anyhow::Result<()> {
+        debug_assert!(
+            self.acpt_rx.is_none()
+            && self.close_acpt_tx.is_none()
+            && self.recv_tx.is_none()
+            && self.recv_rx.is_none()
+            && self.timeout_rx.is_none()
+            && self.timeout_tx.is_none()
+        );
+
+        if !self.is_closed() {
+            bail!("dtls server is not closed");
+        }
+
         self.start_listen(config)?;
         self.start_acpt_loop()
     }

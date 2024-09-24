@@ -16,7 +16,7 @@ fn send_hellooon_system(
     dtls_server: Res<DtlsServer>, 
     mut counter: ResMut<ServerHellooonCounter>
 ) {
-    if dtls_server.clients_len() == 0 {
+    if dtls_server.connected_clients() == 0 {
         return;
     }
 
