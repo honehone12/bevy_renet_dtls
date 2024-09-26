@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bevy::prelude::*;
 use bevy_renet::{renet::RenetClient, RenetReceive, RenetSend};
 use bevy_dtls::client::{
@@ -46,7 +47,8 @@ impl RenetClientDtlsExt for RenetClient {
 
 fn send_system(
     mut renet_client: ResMut<RenetClient>,
-    dtls_client: Res<DtlsClient>
+    dtls_client: Res<DtlsClient>,
+    mut errors: EventWriter<DtlsClientError>
 ) {
     if dtls_client.is_closed() {
         return;
@@ -57,12 +59,11 @@ fn send_system(
     let packets = renet_client.get_packets_to_send();
     for pkt in packets {
         if let Err(e) = dtls_client.send(Bytes::from(pkt)) {
-            if cfg!(debug_assertions) {
-                panic!("{e}");
-            } else {
-                error!("{e}");
-                return;
-            }
+            errors.send(DtlsClientError::Error { 
+                err: anyhow!("error on sending: {e}") 
+            });
+
+            break;
         }
     }
 }

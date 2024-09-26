@@ -12,10 +12,10 @@ pub enum DtlsServerError {
     RecvTimeout {
         conn_index: ConnIndex
     },
-    Fatal {
+    Error {
         err: anyhow::Error
     },
-    ConnFatal {
+    ConnError {
         conn_index: ConnIndex,
         err: anyhow::Error
     }
@@ -57,7 +57,7 @@ pub fn fatal_event_system(
     let health = dtls_server.health_check();
     if let Some(r) = health.listener {
         if let Err(e) = r {
-            errors.send(DtlsServerError::Fatal { 
+            errors.send(DtlsServerError::Error { 
                 err: anyhow!("fatal error from listener: {e}")
             });
         }
@@ -65,7 +65,7 @@ pub fn fatal_event_system(
     }
     for (idx, r) in health.sender {
         if let Err(e) = r {
-            errors.send(DtlsServerError::ConnFatal { 
+            errors.send(DtlsServerError::ConnError { 
                 conn_index: idx, 
                 err: anyhow!("fatal error from sender: {e}")
             });
@@ -73,7 +73,7 @@ pub fn fatal_event_system(
     }
     for (idx, r) in health.recver {
         if let Err(e) = r {
-            errors.send(DtlsServerError::ConnFatal { 
+            errors.send(DtlsServerError::ConnError { 
                 conn_index: idx, 
                 err: anyhow!("fatal error from recver: {e}")
             });

@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bevy::prelude::*;
 use rustls::crypto::aws_lc_rs;
 use super::{
@@ -5,21 +6,29 @@ use super::{
     health::{self, DtlsServerError, DtlsServerClosed}
 };
 
-fn accept_system(mut dtls_server: ResMut<DtlsServer>) {
-    let Some(conn_idx) = dtls_server.acpt() else {
+fn accept_system(
+    mut dtls_server: ResMut<DtlsServer>,
+    mut errors: EventWriter<DtlsServerError>
+) {
+    if dtls_server.is_closed() {
         return;
-    };
-
-    if let Err(e) = dtls_server.start_conn(conn_idx) {
-        if cfg!(debug_assertions) {
-            panic!("{e}")
-        } else {
-            error!("{e}");
-            return;
-        }
     }
+    
+    loop {
+        let Some(conn_idx) = dtls_server.acpt() else {
+            return;
+        };
+    
+        if let Err(e) = dtls_server.start_conn(conn_idx) {
+            errors.send(DtlsServerError::Error { 
+                err: anyhow!("conn {conn_idx:?} could not be started: {e}") 
+            });
 
-    debug!("conn: {} has been started from default system", conn_idx.index());
+            continue;
+        }
+    
+        debug!("conn {conn_idx:?} has been started from default system");
+    }
 }
 
 pub struct DtlsServerPlugin {

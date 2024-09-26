@@ -117,7 +117,7 @@ fn handle_net_error(
     for e in errors.read() {
         match e {
             DtlsClientError::SendTimeout { .. } => error!("{e:?}"),
-            DtlsClientError::Fatal { .. } => error!("{e:?}")
+            DtlsClientError::Error { .. } => error!("{e:?}")
         }
     }
 }

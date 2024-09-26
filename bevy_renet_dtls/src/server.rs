@@ -1,12 +1,13 @@
+use anyhow::anyhow;
 use bevy::prelude::*;
 use bevy_renet::{renet::RenetServer, RenetReceive, RenetSend};
 use bevy_dtls::server::{
-    dtls_server::DtlsServer, 
-    health::{self, DtlsServerError, DtlsServerClosed}
+    dtls_server::{ConnIndex, DtlsServer}, 
+    health::{self, DtlsServerClosed, DtlsServerError}
 };
 use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
-use crate::{DtlsSet, ToRenetClientId};
+use crate::{ConnIndexRenetExt, DtlsSet};
 
 fn clean_system(
     mut renet_server: ResMut<RenetServer>,
@@ -27,7 +28,8 @@ fn clean_system(
 
 fn acpt_system(
     mut renet_server: ResMut<RenetServer>,
-    mut dtls_server: ResMut<DtlsServer>
+    mut dtls_server: ResMut<DtlsServer>,
+    mut errors: EventWriter<DtlsServerError>
 ) {
     if dtls_server.is_closed() {
         return;
@@ -39,26 +41,23 @@ fn acpt_system(
         };
 
         if let Err(e) = dtls_server.start_conn(conn_idx) {
-            if cfg!(debug_assertions) {
-                panic!("{e}")
-            } else {
-                error!("{e}");
-                continue;
-            }
+            errors.send(DtlsServerError::Error { 
+                err: anyhow!("conn {conn_idx:?} could not be started: {e}") 
+            });
+
+            continue;
         }
 
-        debug!(
-            "conn: {} has been started from renet-dtls system", 
-            conn_idx.index()
-        );
+        debug!("conn: {conn_idx:?} has been started from renet-dtls system");
 
-        renet_server.add_connection(conn_idx.renet_client_id());
+        renet_server.add_connection(conn_idx.to_renet_id());
     }
 }
 
 fn recv_system(
     mut renet_server: ResMut<RenetServer>,
-    mut dtls_server: ResMut<DtlsServer>
+    mut dtls_server: ResMut<DtlsServer>,
+    mut errors: EventWriter<DtlsServerError>
 ) {
     if dtls_server.is_closed() {
         return;
@@ -71,20 +70,20 @@ fn recv_system(
 
         if let Err(e) = renet_server.process_packet_from(
             &bytes, 
-            conn_idx.renet_client_id()
+            conn_idx.to_renet_id()
         ) {
-            if cfg!(debug_assertions) {
-                panic!("{e}")
-            } else {
-                error!("{e}");
-            }
+            errors.send(DtlsServerError::ConnError { 
+                conn_index: conn_idx, 
+                err: anyhow!("error on receiving conn {conn_idx:?}: {e}")
+            });
         }
     }
 }
 
 fn send_system(
     mut renet_server: ResMut<RenetServer>,
-    dtls_server: Res<DtlsServer>
+    dtls_server: Res<DtlsServer>,
+    mut errors: EventWriter<DtlsServerError>
 ) {
     if dtls_server.is_closed() {
         return;
@@ -99,12 +98,12 @@ fn send_system(
 
         for pkt in packets {
             if let Err(e) = dtls_server.send(client_id.raw(), Bytes::from(pkt)) {
-                if cfg!(debug_assertions) {
-                    panic!("{e}")
-                } else {
-                    error!("{e}");
-                    continue 'client_loop;
-                }
+                errors.send(DtlsServerError::ConnError { 
+                    conn_index: ConnIndex::from_renet_id(&client_id), 
+                    err: anyhow!("error on sending to conn {client_id}: {e}") 
+                });
+
+                continue 'client_loop;
             }
         }
     }

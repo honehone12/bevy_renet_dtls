@@ -31,6 +31,11 @@ pub struct ConnIndex(u64);
 
 impl ConnIndex {
     #[inline]
+    pub fn new(index: u64) -> Self {
+        Self(index)
+    }
+    
+    #[inline]
     pub fn index(&self) -> u64 {
         self.0
     }
@@ -300,6 +305,13 @@ impl DtlsServer {
         self.start_send_loop(conn_index)
     }
 
+    #[inline]
+    pub fn has_conn(&self, conn_idx: u64) -> bool {
+        self.conn_map.read()
+        .unwrap()
+        .contains_key(&conn_idx)
+    }
+
     pub fn acpt(&mut self) -> Option<ConnIndex> {
         let Some(ref mut acpt_rx) = self.acpt_rx else {
             return None;
@@ -320,14 +332,14 @@ impl DtlsServer {
         let r = self.conn_map.read()
         .unwrap();
         let Some(ref dtls_conn) = r.get(&conn_index) else {
-            bail!("dtls conn: {conn_index} is None");
+            bail!("dtls conn {conn_index} is None");
         };
         let Some(ref send_tx) = dtls_conn.send_tx else {
-            bail!("send tx: {conn_index} is None");
+            bail!("send tx {conn_index} is None");
         };
 
         if let Err(e) = send_tx.send(message) {
-            bail!("conn: {conn_index} is not started or disconnected: {e}");
+            bail!("conn {conn_index} is not started or disconnected: {e}");
         }
         Ok(())
     }

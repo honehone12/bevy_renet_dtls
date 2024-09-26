@@ -8,7 +8,7 @@ pub enum DtlsClientError {
     SendTimeout {
         bytes: Bytes
     },
-    Fatal {
+    Error {
         err: anyhow::Error
     }
 }
@@ -39,14 +39,14 @@ pub fn fatal_event_system(
     let health = dtls_client.health_check();
     if let Some(r) = health.sender {
         if let Err(e) = r {
-            errors.send(DtlsClientError::Fatal { 
+            errors.send(DtlsClientError::Error { 
                 err: anyhow!("fatal error from sender: {e}")
             });
         }
     }
     if let Some(r) = health.recver {
         if let Err(e) = r {
-            errors.send(DtlsClientError::Fatal { 
+            errors.send(DtlsClientError::Error { 
                 err: anyhow!("fatal error from recver: {e}")
             });
         }

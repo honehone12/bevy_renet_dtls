@@ -16,7 +16,7 @@ use bevy_dtls::server::{
     dtls_server::{DtlsServer, DtlsServerConfig}, 
     health::{DtlsServerClosed, DtlsServerError}
 };
-use bevy_renet_dtls::{server::RenetDtlsServerPlugin, ToRenetClientId};
+use bevy_renet_dtls::{server::RenetDtlsServerPlugin, ConnIndexRenetExt};
 use bytes::Bytes;
 
 #[derive(Resource)]
@@ -92,19 +92,19 @@ fn handle_net_error(
         match e {
             DtlsServerError::SendTimeout { conn_index, .. } => {
                 warn!("send timeout: disconnecting");
-                renet_server.disconnect(conn_index.renet_client_id());
+                renet_server.disconnect(conn_index.to_renet_id());
             }
             DtlsServerError::RecvTimeout { conn_index } => {
                 warn!("recv timeout: disconnecting");
-                renet_server.disconnect(conn_index.renet_client_id());
+                renet_server.disconnect(conn_index.to_renet_id());
             }
-            DtlsServerError::Fatal { err } => {
+            DtlsServerError::Error { err } => {
                 // i found duplicate binding error event after
                 // closing listener. i will try again later but
                 // all i can do for now is just panic
-                panic!("{err}");
+                error!("{err}");
             }
-            DtlsServerError::ConnFatal { conn_index, err } => {
+            DtlsServerError::ConnError { conn_index, err } => {
                 // better way to get this specific error ??
                 if err.to_string()
                 .ends_with("Alert is Fatal or Close Notify") {
@@ -113,7 +113,7 @@ fn handle_net_error(
                     error!("{err}: disconnecting");
                 }
 
-                renet_server.disconnect(conn_index.renet_client_id());
+                renet_server.disconnect(conn_index.to_renet_id());
             }
         }
     }
