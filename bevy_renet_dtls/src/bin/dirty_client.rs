@@ -19,11 +19,11 @@ struct ClientHellooonCounter(u64);
 struct Restart(bool, u64);
 
 fn send_hellooon_system(
-    mut commands: Commands,
+    // mut commands: Commands,
     mut renet_client: ResMut<RenetClient>,
-    mut dtls_client: ResMut<DtlsClient>,
+    // mut dtls_client: ResMut<DtlsClient>,
     mut counter: ResMut<ClientHellooonCounter>,
-    mut restart: ResMut<Restart>
+    // mut restart: ResMut<Restart>
 ) {
     if renet_client.is_disconnected() {
         return;
@@ -34,22 +34,22 @@ fn send_hellooon_system(
     renet_client.send_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
 
-    if counter.0 % 10 != 0 {
-        return;
-    }
+    // if counter.0 % 10 != 0 {
+    //     return;
+    // }
 
-    if restart.0 {
-        return;
-    }
+    // if restart.0 {
+    //     return;
+    // }
 
-    warn!("disconnecting. will restart soon...");
-    // disconnect dtls and close renet
-    renet_client.disconnect_dtls(&mut dtls_client);
-    // remove renet client for renewal
-    commands.remove_resource::<RenetClient>();
+    // warn!("disconnecting. will restart soon...");
+    // // disconnect dtls and close renet
+    // renet_client.close_dtls(&mut dtls_client);
+    // // remove renet client for renewal
+    // commands.remove_resource::<RenetClient>();
     
-    restart.0 = true;
-    restart.1 = 0;
+    // restart.0 = true;
+    // restart.1 = 0;
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
@@ -112,12 +112,27 @@ fn handle_restart(
 }
 
 fn handle_net_error(
-    mut errors: EventReader<DtlsClientError>
+    mut commands: Commands,
+    mut renet_client: Option<ResMut<RenetClient>>,
+    mut dtls_client: ResMut<DtlsClient>,
+    mut errors: EventReader<DtlsClientError>,
 ) {
     for e in errors.read() {
         match e {
-            DtlsClientError::SendTimeout { .. } => error!("{e:?}"),
-            DtlsClientError::Error { .. } => error!("{e:?}")
+            DtlsClientError::SendTimeout { .. } => error!("timeout sending"),
+            DtlsClientError::Error { err } => {
+                if err.to_string()
+                .ends_with("Alert is Fatal or Close Notify") {
+                    warn!("server disconneted: {err}");
+                } else {
+                    error!("{err:?}");
+                }
+            
+                if let Some(ref mut renet) = renet_client {
+                    renet.close_dtls(&mut dtls_client);
+                    commands.remove_resource::<RenetClient>();
+                }
+            }
         }
     }
 }

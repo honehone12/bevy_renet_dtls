@@ -16,7 +16,10 @@ use bevy_dtls::server::{
     dtls_server::{DtlsServer, DtlsServerConfig}, 
     health::{DtlsServerClosed, DtlsServerError}
 };
-use bevy_renet_dtls::{server::RenetDtlsServerPlugin, ConnIndexRenetExt};
+use bevy_renet_dtls::{
+    server::{RenetDtlsServerPlugin, RenetServerDtlsExt}, 
+    ConnIndexRenetExt
+};
 use bytes::Bytes;
 
 #[derive(Resource)]
@@ -27,7 +30,7 @@ struct ReceivedHellooonCounter(HashMap<ClientId, u64>);
 
 fn send_hellooon_system(
     mut renet_server: ResMut<RenetServer>,
-    dtls_server: Res<DtlsServer>,
+    mut dtls_server: ResMut<DtlsServer>,
     mut counter: ResMut<SentHellooonCounter>
 ) {
     let renet_len = renet_server.connected_clients();
@@ -44,14 +47,13 @@ fn send_hellooon_system(
     let msg = Bytes::from(str);
     renet_server.broadcast_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
-    info!("broadcasted: {}", counter.0);
+    debug!("broadcasted: {}", counter.0);
 
-    // if counter.0 > 10 {
-    //     warn!("disconnecting all");
-    //     renet_server.disconnect_all();
-    //     dtls_server.stop();
-    //     counter.0 = 0;
-    // }
+    if counter.0 > 10 {
+        warn!("disconnecting all");
+        renet_server.disconnect_all_dtls(&mut dtls_server);
+        counter.0 = 0;
+    }
 }
 
 fn recv_hellooon_system(
@@ -77,7 +79,7 @@ fn recv_hellooon_system(
                 *count += 1;
                 // if *count > 100  {
                 //     warn!("disconnecting: {client_id:?}");
-                //     renet_server.disconnect(client_id);
+                //     renet_server.disconnect_dtls(client_id);
                 // }
             }
         }
@@ -124,9 +126,7 @@ fn handle_closed(
     mut closed: EventReader<DtlsServerClosed>
 ) {
     for _ in closed.read() {
-        if let Err(e) = dtls_server.restart() {
-            panic!("{e}");
-        }
+        
 
         info!("server is restarted");
     }

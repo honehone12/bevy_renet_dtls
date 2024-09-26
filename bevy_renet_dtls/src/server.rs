@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use bevy::prelude::*;
-use bevy_renet::{renet::RenetServer, RenetReceive, RenetSend};
+use bevy_renet::{renet::{ClientId, RenetServer}, RenetReceive, RenetSend};
 use bevy_dtls::server::{
     dtls_server::{ConnIndex, DtlsServer}, 
     health::{self, DtlsServerClosed, DtlsServerError}
@@ -9,20 +9,34 @@ use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
 use crate::{ConnIndexRenetExt, DtlsSet};
 
-fn clean_system(
-    mut renet_server: ResMut<RenetServer>,
-    mut dtls_server: ResMut<DtlsServer>
-) {
-    if dtls_server.is_closed() {
-        return;
+pub trait RenetServerDtlsExt {
+    fn disconnect_dtls(
+        &mut self, 
+        dtls_server: &mut DtlsServer, 
+        conn_index: u64
+    );
+
+    fn disconnect_all_dtls(&mut self, dtls_server: &mut DtlsServer);
+}
+
+impl RenetServerDtlsExt for RenetServer {
+    #[inline]
+    fn disconnect_dtls(
+        &mut self, 
+        dtls_server: &mut DtlsServer, 
+        conn_index: u64
+    ) {
+        let client_id = ClientId::from_raw(conn_index);
+        self.disconnect(client_id);
+        dtls_server.disconnect(conn_index);
+        self.remove_connection(client_id);
     }
 
-    let dis_conns = renet_server.disconnections_id();
-    for dis_conn in dis_conns {
-        dtls_server.disconnect(dis_conn.raw());
-        debug!("cleaning: {dis_conn:?}, removed from dtls server");
-        renet_server.remove_connection(dis_conn);
-        debug!("cleaning: {dis_conn:?}, removed from renet server");
+    fn disconnect_all_dtls(&mut self, dtls_server: &mut DtlsServer) {
+        let indices = dtls_server.client_indices();
+        for idx in indices {
+            self.disconnect_dtls(dtls_server, idx);         
+        }
     }
 }
 
@@ -156,11 +170,12 @@ impl Plugin for RenetDtlsServerPlugin {
             .run_if(resource_exists::<RenetServer>)
         )
         .add_systems(PostUpdate, (
-            clean_system,
             health::fatal_event_system,
             health::timeout_event_system
-        ).chain(
-        ).after(DtlsSet::Send
-        ).run_if(resource_exists::<RenetServer>));
+        )
+            .chain()
+            .after(DtlsSet::Send)
+            .run_if(resource_exists::<RenetServer>)
+        );
     }
 }

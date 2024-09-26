@@ -91,6 +91,59 @@ impl DtlsServerAcpter {
             close_rx,
         })
     }
+
+    async fn acpt_loop(mut self) -> anyhow::Result<()> {
+        // start index from 1
+        // because server wants reserve 0
+        let mut index: u64 = 1;
+
+        let result = loop {
+            let (conn, addr) = select! {
+                biased;
+
+                Some(_) = self.close_rx.recv() => break Ok(()),
+                r = self.listener.accept() => {
+                    match r {
+                        Ok(ca) => ca,
+                        Err(e) => break Err(anyhow!(e)),
+                    }
+                }
+                else => {
+                    warn!("close acpt tx is dropped before rx is closed");
+                    break Ok(());
+                }
+            };
+
+            if self.conn_map.read()
+            .unwrap()
+            .len() >= self.max_clients {
+                warn!("{addr} is trying to connect, but exceeded max clients");
+                if let Err(e) = conn.close().await {
+                    error!("error on disconnect {addr}: {e}");
+                }
+                continue;
+            }
+
+            let idx = index;
+            index = match index.checked_add(1) {
+                Some(i) => i,
+                None => break Err(anyhow!("conn index overflow"))
+            };
+            
+            let mut w = self.conn_map.write()
+            .unwrap();
+            debug_assert!(!w.contains_key(&idx));
+            w.insert(idx, DtlsConn::new(conn));
+
+            if let Err(e) = self.acpt_tx.send(ConnIndex(idx)) {
+                break Err(anyhow!(e));
+            }
+            debug!("conn from {addr} accepted");
+        };
+
+        debug!("dtls server listener is closed");
+        result
+    }
 }
 
 struct DtlsServerRecver {
@@ -134,6 +187,53 @@ impl DtlsServerRecver {
             None => Duration::MAX
         }
     }
+
+    async fn recv_loop(mut self) -> anyhow::Result<()> {
+        let mut buf = BytesMut::zeroed(self.buf_size);
+        let timeout_dur = self.timeout_secs();
+
+        let result = loop {
+            let (n, addr) = select! {
+                biased;
+
+                Some(_) = self.close_rx.recv() => break Ok(()),
+                r = self.conn.recv_from(&mut buf) => {
+                    match r {
+                        Ok(na) => na,
+                        Err(e) => break Err(anyhow!("conn {:?}: {e}", self.conn_idx))
+                    }
+                }
+                () = sleep(timeout_dur) => {
+                    if let Err(e) = self.timeout_tx.send(
+                        DtlsServerTimeout::Recv(self.conn_idx)
+                    ) {
+                        break Err(anyhow!("conn {:?}: {e}", self.conn_idx));
+                    }
+                    continue;
+                }
+                else => {
+                    warn!(
+                        "close recv tx {:?} is closed before rx is closed", 
+                        self.conn_idx
+                    );
+                    break Ok(());
+                }
+            };
+
+            let recved = buf.split_to(n)
+            .freeze();
+            if let Err(e) = self.recv_tx.send((self.conn_idx, recved)) {
+                break Err(anyhow!(e));
+            }
+
+            buf.resize(self.buf_size, 0);
+            trace!("received {n}bytes from {:?}:{addr}", self.conn_idx);
+        };
+
+        self.conn.close().await?;
+        debug!("dtls server recv loop: {:?} is closed", self.conn_idx);
+        result
+    }
 }
 
 struct DtlsServerSender {
@@ -170,6 +270,48 @@ impl DtlsServerSender {
     #[inline]
     fn timeout_secs(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
+    }
+
+    async fn send_loop(mut self) -> anyhow::Result<()> {
+        let result = loop {
+            select! {
+                biased;
+
+                Some(_) = self.close_rx.recv() => break Ok(()),
+                Some(msg) = self.send_rx.recv() => {
+                    match timeout(
+                        self.timeout_secs(),
+                        self.conn.send(&msg)
+                    ).await {
+                        Ok(r) => {
+                            match r {
+                                Ok(n) => trace!("sent {n} bytes to {:?}", self.conn_idx),
+                                Err(e) => break Err(anyhow!("conn {:?}: {e}", self.conn_idx))
+                            }
+                        }
+                        Err(_) => {
+                            if let Err(e) = self.timeout_tx.send(DtlsServerTimeout::Send { 
+                                conn_index: self.conn_idx, 
+                                bytes: msg 
+                            }) {
+                                break Err(anyhow!("conn {:?}: {e}", self.conn_idx));
+                            }
+                        }
+                    }
+                }
+                else => {
+                    warn!(
+                        "close send tx {:?} is closed before rx is closed", 
+                        self.conn_idx
+                    );
+                    break Ok(());
+                }
+            }
+        };
+
+        self.conn.close().await?;
+        debug!("dtls server send loop {:?} is closed", self.conn_idx);
+        result
     }
 }
 
@@ -283,6 +425,18 @@ impl DtlsServer {
     }
 
     #[inline]
+    pub fn client_indices(&mut self) -> Vec<u64> {
+        let ks = {
+            self.conn_map.read()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect()
+        };
+        ks
+    }
+
+    #[inline]
     pub fn start(&mut self, config: DtlsServerConfig)
     -> anyhow::Result<()> {
         if !self.is_closed() {
@@ -290,11 +444,6 @@ impl DtlsServer {
         }
 
         self.start_listen(config)?;
-        self.start_acpt_loop()
-    }
-
-    #[inline]
-    pub fn restart(&mut self) -> anyhow::Result<()> {
         self.start_acpt_loop()
     }
 
@@ -433,22 +582,13 @@ impl DtlsServer {
             .cloned()
             .collect()
         };
-
-        for k in ks {
-            self.disconnect(k);
+        
+        for idx in ks {
+            self.disconnect(idx);
         }
     }
 
-    pub fn stop(&mut self) {
-        // listener is not closed by this function
-        self.close_acpt_loop();
-        self.recv_tx = None;
-        self.recv_rx = None;
-        self.timeout_tx = None;
-        self.timeout_rx = None;
-    }
-
-    pub fn close_on_shutdown(&mut self) {
+    pub fn close(&mut self) {
         let Some(l) = self.listener.take() else {
             return;
         };
@@ -506,64 +646,11 @@ impl DtlsServer {
         self.acpt_rx = Some(acpt_rx);
         self.close_acpt_tx = Some(close_tx);
         
-        let handle = self.runtime.spawn(Self::acpt_loop(acpter));
+        let handle = self.runtime.spawn(acpter.acpt_loop());
         self.acpt_handle = Some(handle);
 
         debug!("acpt loop is started");
         Ok(())
-    }
-
-    async fn acpt_loop(mut acpter: DtlsServerAcpter) -> anyhow::Result<()> {
-        // start index from 1
-        // because server wants reserve 0
-        let mut index: u64 = 1;
-
-        let result = loop {
-            let (conn, addr) = select! {
-                biased;
-
-                Some(_) = acpter.close_rx.recv() => break Ok(()),
-                r = acpter.listener.accept() => {
-                    match r {
-                        Ok(ca) => ca,
-                        Err(e) => break Err(anyhow!(e)),
-                    }
-                }
-                else => {
-                    warn!("close acpt tx is dropped before rx is closed");
-                    break Ok(());
-                }
-            };
-
-            if acpter.conn_map.read()
-            .unwrap()
-            .len() >= acpter.max_clients {
-                warn!("{addr} is trying to connect, but exceeded max clients");
-                if let Err(e) = conn.close().await {
-                    error!("error on disconnect {addr}: {e}");
-                }
-                continue;
-            }
-
-            let idx = index;
-            index = match index.checked_add(1) {
-                Some(i) => i,
-                None => break Err(anyhow!("conn index overflow"))
-            };
-            
-            let mut w = acpter.conn_map.write()
-            .unwrap();
-            debug_assert!(!w.contains_key(&idx));
-            w.insert(idx, DtlsConn::new(conn));
-
-            if let Err(e) = acpter.acpt_tx.send(ConnIndex(idx)) {
-                break Err(anyhow!(e));
-            }
-            debug!("conn from {addr} accepted");
-        };
-
-        debug!("dtls server listener is closed");
-        result
     }
 
     fn health_check_acpt(&mut self) 
@@ -623,58 +710,11 @@ impl DtlsServer {
 
         dtls_conn.close_recv_tx = Some(close_tx);
 
-        let handle = self.runtime.spawn(Self::recv_loop(recver));
+        let handle = self.runtime.spawn(recver.recv_loop());
         dtls_conn.recv_handle = Some(handle);
         
         debug!("recv loop {conn_idx:?} has started");
         Ok(())
-    }
-
-    async fn recv_loop(mut recver: DtlsServerRecver) -> anyhow::Result<()> {
-        let mut buf = BytesMut::zeroed(recver.buf_size);
-        let timeout_dur = recver.timeout_secs();
-
-        let result = loop {
-            let (n, addr) = select! {
-                biased;
-
-                Some(_) = recver.close_rx.recv() => break Ok(()),
-                r = recver.conn.recv_from(&mut buf) => {
-                    match r {
-                        Ok(na) => na,
-                        Err(e) => break Err(anyhow!("conn {:?}: {e}", recver.conn_idx))
-                    }
-                }
-                () = sleep(timeout_dur) => {
-                    if let Err(e) = recver.timeout_tx.send(
-                        DtlsServerTimeout::Recv(recver.conn_idx)
-                    ) {
-                        break Err(anyhow!("conn {:?}: {e}", recver.conn_idx));
-                    }
-                    continue;
-                }
-                else => {
-                    warn!(
-                        "close recv tx {:?} is closed before rx is closed", 
-                        recver.conn_idx
-                    );
-                    break Ok(());
-                }
-            };
-
-            let recved = buf.split_to(n)
-            .freeze();
-            if let Err(e) = recver.recv_tx.send((recver.conn_idx, recved)) {
-                break Err(anyhow!(e));
-            }
-
-            buf.resize(recver.buf_size, 0);
-            trace!("received {n}bytes from {:?}:{addr}", recver.conn_idx);
-        };
-
-        recver.conn.close().await?;
-        debug!("dtls server recv loop: {:?} is closed", recver.conn_idx);
-        result
     }
 
     fn health_check_recv(&mut self)
@@ -735,53 +775,11 @@ impl DtlsServer {
         dtls_conn.send_tx = Some(send_tx);
         dtls_conn.close_send_tx = Some(close_tx);
 
-        let handle = self.runtime.spawn(Self::send_loop(sender));
+        let handle = self.runtime.spawn(sender.send_loop());
         dtls_conn.send_handle = Some(handle);
 
         debug!("send loop {conn_idx:?} has started");
         Ok(())
-    }
-
-    async fn send_loop(mut sender: DtlsServerSender) -> anyhow::Result<()> {
-        let result = loop {
-            select! {
-                biased;
-
-                Some(_) = sender.close_rx.recv() => break Ok(()),
-                Some(msg) = sender.send_rx.recv() => {
-                    match timeout(
-                        sender.timeout_secs(),
-                        sender.conn.send(&msg)
-                    ).await {
-                        Ok(r) => {
-                            match r {
-                                Ok(n) => trace!("sent {n} bytes to {:?}", sender.conn_idx),
-                                Err(e) => break Err(anyhow!("conn {:?}: {e}", sender.conn_idx))
-                            }
-                        }
-                        Err(_) => {
-                            if let Err(e) = sender.timeout_tx.send(DtlsServerTimeout::Send { 
-                                conn_index: sender.conn_idx, 
-                                bytes: msg 
-                            }) {
-                                break Err(anyhow!("conn {:?}: {e}", sender.conn_idx));
-                            }
-                        }
-                    }
-                }
-                else => {
-                    warn!(
-                        "close send tx {:?} is closed before rx is closed", 
-                        sender.conn_idx
-                    );
-                    break Ok(());
-                }
-            }
-        };
-
-        sender.conn.close().await?;
-        debug!("dtls server send loop {:?} is closed", sender.conn_idx);
-        result
     }
 
     fn health_check_send(&mut self)
