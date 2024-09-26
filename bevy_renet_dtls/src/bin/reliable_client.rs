@@ -40,8 +40,8 @@ fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
     }
 }
 
-fn handle_net_event(mut errors: EventReader<DtlsClientEvent>) {
-    for e in errors.read() {
+fn handle_net_event(mut events: EventReader<DtlsClientEvent>) {
+    for e in events.read() {
         error!("{e:?}");
     }
 }

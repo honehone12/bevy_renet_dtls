@@ -242,14 +242,14 @@ fn draw_boxes(mut gizmos: Gizmos, players: Query<(&PlayerPosition, &PlayerColor)
 }
 
 fn handle_event(
-    mut server_errors: EventReader<DtlsServerEvent>,
-    mut client_errors: EventReader<DtlsClientEvent>
+    mut server_events: EventReader<DtlsServerEvent>,
+    mut client_events: EventReader<DtlsClientEvent>
 ) {
-    for e in server_errors.read() {
+    for e in server_events.read() {
         error!("{e:?}");
     }
 
-    for e in client_errors.read() {
+    for e in client_events.read() {
         error!("{e:?}");
     }
 }

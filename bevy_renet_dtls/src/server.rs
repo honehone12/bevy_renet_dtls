@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use bevy::prelude::*;
 use bevy_renet::{renet::{ClientId, RenetServer}, RenetReceive, RenetSend};
 use bevy_dtls::server::{
-    dtls_server::{ConnIndex, DtlsServer}, 
+    dtls_server::DtlsServer, 
     event::{self, DtlsServerEvent}
 };
 use bytes::Bytes;
@@ -87,7 +87,7 @@ fn recv_system(
             conn_idx.to_renet_id()
         ) {
             errors.send(DtlsServerEvent::ConnError { 
-                conn_index: conn_idx, 
+                conn_index: conn_idx.index(), 
                 err: anyhow!("error on receiving conn {conn_idx:?}: {e}")
             });
         }
@@ -113,7 +113,7 @@ fn send_system(
         for pkt in packets {
             if let Err(e) = dtls_server.send(client_id.raw(), Bytes::from(pkt)) {
                 errors.send(DtlsServerEvent::ConnError { 
-                    conn_index: ConnIndex::from_renet_id(&client_id), 
+                    conn_index: client_id.raw(), 
                     err: anyhow!("error on sending to conn {client_id}: {e}") 
                 });
 

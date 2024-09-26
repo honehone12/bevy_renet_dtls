@@ -31,11 +31,6 @@ pub struct ConnIndex(u64);
 
 impl ConnIndex {
     #[inline]
-    pub fn new(index: u64) -> Self {
-        Self(index)
-    }
-    
-    #[inline]
     pub fn index(&self) -> u64 {
         self.0
     }
@@ -53,7 +48,8 @@ impl DtlsServerConfig {
         let listener = listener::listen(
             (self.listen_addr, self.listen_port), 
             self.cert_option.to_dtls_config()?
-        ).await?;
+        )
+        .await?;
 
         debug!("dtls server listening at {}", self.listen_addr);
         Ok(Arc::new(listener))
@@ -413,19 +409,23 @@ impl DtlsServer {
 
     #[inline]
     pub fn is_closed(&self) -> bool {
-        let mut closed = self.listener.is_none()
+        let closed = self.listener.is_none()
         && self.acpt_handle.is_none()
         && self.conn_map.read()
         .unwrap()
         .is_empty();
 
         if cfg!(debug_assertions) {
-            closed = self.acpt_rx.is_none()
-            && self.close_acpt_tx.is_none()
-            && self.recv_tx.is_none()
-            && self.recv_rx.is_none()
-            && self.timeout_rx.is_none()
-            && self.timeout_tx.is_none();
+            if closed && (
+                self.acpt_rx.is_some()
+                || self.close_acpt_tx.is_some()
+                || self.recv_tx.is_some()
+                || self.recv_rx.is_some()
+                || self.timeout_rx.is_some()
+                || self.timeout_tx.is_some()
+            ) {
+                panic!("conn and handles are closed, but channels are still open"); 
+            }
         }
 
         closed
@@ -562,8 +562,8 @@ impl DtlsServer {
     pub fn health_check(&mut self) -> DtlsServerHealth {
         DtlsServerHealth{
             listener: self.health_check_acpt(),
-            sender: self.health_check_send(),
-            recver: self.health_check_recv()
+            sender: self.health_check_send_loop(),
+            recver: self.health_check_recv_loop()
         }
     }
 
@@ -582,7 +582,7 @@ impl DtlsServer {
 
         if let Some(close_send_tx) = dtls_conn.close_send_tx {
             if let Err(e) = close_send_tx.send(DtlsServerClose) {
-                warn!("close recv tx {conn_index} is closed before set to None: {e}");
+                warn!("close send tx {conn_index} is closed before set to None: {e}");
             }
         }
     }
@@ -719,7 +719,7 @@ impl DtlsServer {
         Ok(())
     }
 
-    fn health_check_recv(&mut self)
+    fn health_check_recv_loop(&mut self)
     -> Vec<(ConnIndex, anyhow::Result<()>)> {
         let finished = {
             let mut v = vec![];
@@ -784,7 +784,7 @@ impl DtlsServer {
         Ok(())
     }
 
-    fn health_check_send(&mut self)
+    fn health_check_send_loop(&mut self)
     -> Vec<(ConnIndex, anyhow::Result<()>)> {
         let finished = {
             let mut v = vec![];

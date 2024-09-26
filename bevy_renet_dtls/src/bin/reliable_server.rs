@@ -53,8 +53,8 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
     }    
 }
 
-fn handle_net_event(mut errors: EventReader<DtlsServerEvent>) {
-    for e in errors.read() {
+fn handle_net_event(mut events: EventReader<DtlsServerEvent>) {
+    for e in events.read() {
         error!("{e:?}");
     }
 }

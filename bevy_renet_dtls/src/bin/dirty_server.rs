@@ -16,10 +16,7 @@ use bevy_dtls::server::{
     dtls_server::{DtlsServer, DtlsServerConfig}, 
     event::DtlsServerEvent
 };
-use bevy_renet_dtls::{
-    server::{RenetDtlsServerPlugin, RenetServerDtlsExt}, 
-    ConnIndexRenetExt
-};
+use bevy_renet_dtls::server::{RenetDtlsServerPlugin, RenetServerDtlsExt};
 use bytes::Bytes;
 
 #[derive(Resource)]
@@ -27,7 +24,8 @@ struct ServerHellooonCounter(u64);
 
 fn send_hellooon_system(
     mut renet_server: ResMut<RenetServer>,
-    mut dtls_server: ResMut<DtlsServer>,
+    // mut dtls_server: ResMut<DtlsServer>,
+    dtls_server: Res<DtlsServer>,
     mut counter: ResMut<ServerHellooonCounter>
 ) {
     let renet_len = renet_server.connected_clients();
@@ -46,12 +44,12 @@ fn send_hellooon_system(
     counter.0 += 1;
     debug!("broadcasted: {}", counter.0);
 
-    if counter.0 % 10 == 0 {
-        warn!("disconnecting all...");
-
-        renet_server.disconnect_all_dtls(&mut dtls_server);
-        counter.0 = 0;
-    }
+    // if counter.0 % 10 == 0 {
+    //     warn!("disconnecting all...");
+    //     // disconnect all
+    //     renet_server.disconnect_all_dtls(&mut dtls_server);
+    //     counter.0 = 0;
+    // }
 }
 
 fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
@@ -72,19 +70,19 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
     }    
 }
 
-fn handle_net_error(
-    mut errors: EventReader<DtlsServerEvent>,
-    mut renet_server: ResMut<RenetServer>
+fn handle_net_event(
+    mut renet_server: ResMut<RenetServer>,
+    mut dtls_server: ResMut<DtlsServer>,
+    mut dtls_events: EventReader<DtlsServerEvent>
 ) {
-    for e in errors.read() {
+    for e in dtls_events.read() {
         match e {
             DtlsServerEvent::SendTimeout { conn_index, .. } => {
-                warn!("send timeout: disconnecting");
-                renet_server.disconnect(conn_index.to_renet_id());
+                error!("conn {conn_index} sending timeout");
             }
             DtlsServerEvent::RecvTimeout { conn_index } => {
-                warn!("recv timeout: disconnecting");
-                renet_server.disconnect(conn_index.to_renet_id());
+                error!("recv timeout: disconnecting");
+                renet_server.disconnect_dtls(&mut dtls_server, *conn_index);
             }
             DtlsServerEvent::Error { err } => {
                 // i found duplicate binding error event after
@@ -100,8 +98,7 @@ fn handle_net_error(
                 } else {
                     error!("{err}: disconnecting");
                 }
-
-                renet_server.disconnect(conn_index.to_renet_id());
+                renet_server.disconnect_dtls(&mut dtls_server, *conn_index);
             }
         }
     }
@@ -128,7 +125,7 @@ impl Plugin for ServerPlugin {
         app.insert_resource(renet_server)
         .insert_resource(ServerHellooonCounter(0))
         .add_systems(Update, (
-            handle_net_error,
+            handle_net_event,
             send_hellooon_system
             .run_if(resource_exists::<RenetServer>),
             recv_hellooon_system
@@ -151,7 +148,7 @@ fn main() {
         },
         RenetServerPlugin,
         RenetDtlsServerPlugin{
-            max_clients: 1,
+            max_clients: 10,
             buf_size: 1500,
             send_timeout_secs: 1,
             recv_timeout_secs: Some(1)

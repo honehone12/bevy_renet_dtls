@@ -35,10 +35,12 @@ impl DtlsClientConfig {
     -> anyhow::Result<Arc<impl Conn + Sync + Send>> {
         let socket = TokioUdpSocket::bind(
             (self.client_addr, self.client_port)
-        ).await?;
+        )
+        .await?;
         socket.connect(
             (self.server_addr, self.server_port)
-        ).await?;
+        )
+        .await?;
         debug!("connecting to {}", self.server_addr);
 
         let dtls_conn = DTLSConn::new(
@@ -46,7 +48,8 @@ impl DtlsClientConfig {
             self.cert_option.to_dtls_config()?, 
             true, 
             None
-        ).await?;
+        )
+        .await?;
 
         Ok(Arc::new(dtls_conn))
     }
@@ -241,16 +244,20 @@ impl DtlsClient {
 
     #[inline]
     pub fn is_closed(&self) -> bool {
-        let mut closed = self.conn.is_none() 
+        let closed = self.conn.is_none() 
         && self.recv_handle.is_none()
         && self.send_handle.is_none();
 
         if cfg!(debug_assertions) {
-            closed = self.send_tx.is_none()
-            && self.send_timeout_rx.is_none()
-            && self.close_send_tx.is_none()
-            && self.recv_rx.is_none()
-            && self.close_recv_tx.is_none(); 
+            if closed && (
+                self.send_tx.is_some()
+                || self.send_timeout_rx.is_some()
+                || self.close_send_tx.is_some()
+                || self.recv_rx.is_some()
+                || self.close_recv_tx.is_some()
+            ) {
+                panic!("conn and handles are closed, but channels are still open");   
+            }
         }
 
         closed
@@ -315,8 +322,8 @@ impl DtlsClient {
     #[inline]
     pub fn health_check(&mut self) -> DtlsClientHealth {
         DtlsClientHealth{
-            sender: self.health_check_send(),
-            recver: self.health_check_recv()
+            sender: self.health_check_send_loop(),
+            recver: self.health_check_recv_loop()
         }
     }
 
@@ -370,7 +377,7 @@ impl DtlsClient {
         Ok(())
     }
 
-    fn health_check_send(&mut self) 
+    fn health_check_send_loop(&mut self) 
     -> Option<anyhow::Result<()>> {
         let handle_ref = self.send_handle.as_ref()?;
 
@@ -422,7 +429,7 @@ impl DtlsClient {
         Ok(())
     }
 
-    fn health_check_recv(&mut self) 
+    fn health_check_recv_loop(&mut self) 
     -> Option<anyhow::Result<()>> {
         let handle_ref = self.recv_handle.as_ref()?;
 

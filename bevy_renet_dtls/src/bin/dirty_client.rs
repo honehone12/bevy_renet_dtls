@@ -19,11 +19,11 @@ struct ClientHellooonCounter(u64);
 struct Restart(bool, u64);
 
 fn send_hellooon_system(
-    // mut commands: Commands,
+    mut commands: Commands,
     mut renet_client: ResMut<RenetClient>,
-    // mut dtls_client: ResMut<DtlsClient>,
+    mut dtls_client: ResMut<DtlsClient>,
     mut counter: ResMut<ClientHellooonCounter>,
-    // mut restart: ResMut<Restart>
+    mut restart: ResMut<Restart>
 ) {
     if renet_client.is_disconnected() {
         return;
@@ -34,22 +34,22 @@ fn send_hellooon_system(
     renet_client.send_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
 
-    // if counter.0 % 10 != 0 {
-    //     return;
-    // }
+    if counter.0 % 10 != 0 {
+        return;
+    }
 
-    // if restart.0 {
-    //     return;
-    // }
+    if restart.0 {
+        return;
+    }
 
-    // warn!("disconnecting. will restart soon...");
-    // // disconnect dtls and close renet
-    // renet_client.close_dtls(&mut dtls_client);
-    // // remove renet client for renewal
-    // commands.remove_resource::<RenetClient>();
+    warn!("disconnecting. will restart soon...");
+    // disconnect dtls and close renet
+    renet_client.close_dtls(&mut dtls_client);
+    // remove renet client for renewal
+    commands.remove_resource::<RenetClient>();
     
-    // restart.0 = true;
-    // restart.1 = 0;
+    restart.0 = true;
+    restart.1 = 0;
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
@@ -80,13 +80,12 @@ fn handle_restart(
         return;
     }
 
-    // we have to wait a sec for server cleaning up, so
-    // i just want spend some time here
-    todo!("no need to wait so long anymore");
-    restart.1 += 1;
-    if restart.1 <= 100 {
-        return;
-    }
+    // we have to wait a sec for cleaning up of both cient and server  
+    // just spending some time here
+    // restart.1 += 1;
+    // if restart.1 <= 10 {
+    //     return;
+    // }
 
     info!("restarting...");
     // insert new renet client
@@ -112,7 +111,7 @@ fn handle_restart(
     restart.1 = 0;
 }
 
-fn handle_net_error(
+fn handle_net_event(
     mut commands: Commands,
     mut renet_client: Option<ResMut<RenetClient>>,
     mut dtls_client: ResMut<DtlsClient>,
@@ -120,7 +119,7 @@ fn handle_net_error(
 ) {
     for e in errors.read() {
         match e {
-            DtlsClientEvent::SendTimeout { .. } => error!("timeout sending"),
+            DtlsClientEvent::SendTimeout { .. } => error!("sending timeout"),
             DtlsClientEvent::Error { err } => {
                 if err.to_string()
                 .ends_with("Alert is Fatal or Close Notify") {
@@ -166,7 +165,7 @@ impl Plugin for ClientPlugin {
         .insert_resource(ClientHellooonCounter(0))
         .insert_resource(Restart(false, 0))
         .add_systems(Update, (
-            handle_net_error,
+            handle_net_event,
             send_hellooon_system
             .run_if(resource_exists::<RenetClient>),
             recv_hellooon_system
