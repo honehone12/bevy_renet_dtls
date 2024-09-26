@@ -30,6 +30,28 @@ pub struct DtlsClientConfig {
     pub cert_option: ClientCertOption
 }
 
+impl DtlsClientConfig {
+    async fn connect(self) 
+    -> anyhow::Result<Arc<impl Conn + Sync + Send>> {
+        let socket = TokioUdpSocket::bind(
+            (self.client_addr, self.client_port)
+        ).await?;
+        socket.connect(
+            (self.server_addr, self.server_port)
+        ).await?;
+        debug!("connecting to {}", self.server_addr);
+
+        let dtls_conn = DTLSConn::new(
+            Arc::new(socket), 
+            self.cert_option.to_dtls_config()?, 
+            true, 
+            None
+        ).await?;
+
+        Ok(Arc::new(dtls_conn))
+    }
+}
+
 pub struct DtlsClientHealth {
     pub sender: Option<anyhow::Result<()>>,
     pub recver: Option<anyhow::Result<()>>
@@ -312,31 +334,11 @@ impl DtlsClient {
     fn start_connect(&mut self, config: DtlsClientConfig) 
     -> anyhow::Result<()> {
         let conn = future::block_on(self.runtime.spawn(
-            Self::connect(config)
+            config.connect()
         ))??;
         self.conn = Some(conn);
         debug!("dtls client has connected");
         Ok(())
-    }
-
-    async fn connect(config: DtlsClientConfig) 
-    -> anyhow::Result<Arc<impl Conn + Sync + Send>> {
-        let socket = TokioUdpSocket::bind(
-            (config.client_addr, config.client_port)
-        ).await?;
-        socket.connect(
-            (config.server_addr, config.server_port)
-        ).await?;
-        debug!("connecting to {}", config.server_addr);
-
-        let dtls_conn = DTLSConn::new(
-            Arc::new(socket), 
-            config.cert_option.to_dtls_config()?, 
-            true, 
-            None
-        ).await?;
-
-        Ok(Arc::new(dtls_conn))
     }
 
     fn start_send_loop(&mut self) -> anyhow::Result<()> {

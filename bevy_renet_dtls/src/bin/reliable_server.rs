@@ -7,10 +7,13 @@ use bevy::{
     log::{Level, LogPlugin}, 
     prelude::*
 };
-use bevy_renet::{renet::{ConnectionConfig, DefaultChannel, RenetServer}, RenetServerPlugin};
+use bevy_renet::{
+    renet::{ConnectionConfig, DefaultChannel, RenetServer}, 
+    RenetServerPlugin
+};
 use bevy_dtls::server::{
     cert_option::ServerCertOption, 
-    dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError
+    dtls_server::{DtlsServer, DtlsServerConfig}, event::DtlsServerEvent
 };
 use bevy_renet_dtls::server::RenetDtlsServerPlugin;
 use bytes::Bytes;
@@ -50,7 +53,7 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
     }    
 }
 
-fn handle_net_error(mut errors: EventReader<DtlsServerError>) {
+fn handle_net_event(mut errors: EventReader<DtlsServerEvent>) {
     for e in errors.read() {
         error!("{e:?}");
     }
@@ -78,7 +81,7 @@ impl Plugin for ServerPlugin {
         app.insert_resource(renet_server)
         .insert_resource(ServerHellooonCounter(0))
         .add_systems(Update, (
-            handle_net_error,
+            handle_net_event,
             recv_hellooon_system,
             send_hellooon_system
         ).chain());

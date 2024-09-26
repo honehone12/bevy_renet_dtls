@@ -5,16 +5,16 @@ use std::{
 use bevy::{
     app::ScheduleRunnerPlugin, 
     log::{Level, LogPlugin}, 
-    prelude::*, utils::HashMap
+    prelude::*
 };
 use bevy_renet::{
-    renet::{ClientId, ConnectionConfig, DefaultChannel, RenetServer}, 
+    renet::{ConnectionConfig, DefaultChannel, RenetServer}, 
     RenetServerPlugin
 };
 use bevy_dtls::server::{
     cert_option::ServerCertOption, 
     dtls_server::{DtlsServer, DtlsServerConfig}, 
-    health::{DtlsServerClosed, DtlsServerError}
+    event::DtlsServerEvent
 };
 use bevy_renet_dtls::{
     server::{RenetDtlsServerPlugin, RenetServerDtlsExt}, 
@@ -23,15 +23,12 @@ use bevy_renet_dtls::{
 use bytes::Bytes;
 
 #[derive(Resource)]
-struct SentHellooonCounter(u64);
-
-#[derive(Resource)]
-struct ReceivedHellooonCounter(HashMap<ClientId, u64>);
+struct ServerHellooonCounter(u64);
 
 fn send_hellooon_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>,
-    mut counter: ResMut<SentHellooonCounter>
+    mut counter: ResMut<ServerHellooonCounter>
 ) {
     let renet_len = renet_server.connected_clients();
     let dtls_len = dtls_server.connected_clients();
@@ -49,17 +46,15 @@ fn send_hellooon_system(
     counter.0 += 1;
     debug!("broadcasted: {}", counter.0);
 
-    if counter.0 > 10 {
-        warn!("disconnecting all");
+    if counter.0 % 10 == 0 {
+        warn!("disconnecting all...");
+
         renet_server.disconnect_all_dtls(&mut dtls_server);
         counter.0 = 0;
     }
 }
 
-fn recv_hellooon_system(
-    mut renet_server: ResMut<RenetServer>,
-    mut counter: ResMut<ReceivedHellooonCounter>
-) {
+fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
     let ch_len = 3_u8;
     let clients = renet_server.clients_id();
 
@@ -71,42 +66,33 @@ fn recv_hellooon_system(
                 };
     
                 let msg = String::from_utf8(bytes.to_vec()).unwrap();
-                
-                let count = counter.0.entry(client_id)
-                .or_default();
-                info!("message from: {client_id}: {msg}: {count}");
-                
-                *count += 1;
-                // if *count > 100  {
-                //     warn!("disconnecting: {client_id:?}");
-                //     renet_server.disconnect_dtls(client_id);
-                // }
+                info!("message from {client_id}: {msg}");
             }
         }
     }    
 }
 
 fn handle_net_error(
-    mut errors: EventReader<DtlsServerError>,
+    mut errors: EventReader<DtlsServerEvent>,
     mut renet_server: ResMut<RenetServer>
 ) {
     for e in errors.read() {
         match e {
-            DtlsServerError::SendTimeout { conn_index, .. } => {
+            DtlsServerEvent::SendTimeout { conn_index, .. } => {
                 warn!("send timeout: disconnecting");
                 renet_server.disconnect(conn_index.to_renet_id());
             }
-            DtlsServerError::RecvTimeout { conn_index } => {
+            DtlsServerEvent::RecvTimeout { conn_index } => {
                 warn!("recv timeout: disconnecting");
                 renet_server.disconnect(conn_index.to_renet_id());
             }
-            DtlsServerError::Error { err } => {
+            DtlsServerEvent::Error { err } => {
                 // i found duplicate binding error event after
                 // closing listener. i will try again later but
                 // all i can do for now is just panic
                 error!("{err}");
             }
-            DtlsServerError::ConnError { conn_index, err } => {
+            DtlsServerEvent::ConnError { conn_index, err } => {
                 // better way to get this specific error ??
                 if err.to_string()
                 .ends_with("Alert is Fatal or Close Notify") {
@@ -118,17 +104,6 @@ fn handle_net_error(
                 renet_server.disconnect(conn_index.to_renet_id());
             }
         }
-    }
-}
-
-fn handle_closed(
-    mut dtls_server: ResMut<DtlsServer>,
-    mut closed: EventReader<DtlsServerClosed>
-) {
-    for _ in closed.read() {
-        
-
-        info!("server is restarted");
     }
 }
 
@@ -151,16 +126,13 @@ impl Plugin for ServerPlugin {
 
         let renet_server = RenetServer::new(ConnectionConfig::default());
         app.insert_resource(renet_server)
-        .insert_resource(SentHellooonCounter(0))
-        .insert_resource(ReceivedHellooonCounter(default()))
+        .insert_resource(ServerHellooonCounter(0))
         .add_systems(Update, (
             handle_net_error,
             send_hellooon_system
             .run_if(resource_exists::<RenetServer>),
             recv_hellooon_system
-            .run_if(resource_exists::<RenetServer>),
-            handle_closed
-            .run_if(resource_exists::<RenetServer>),
+            .run_if(resource_exists::<RenetServer>)
         ).chain());
 
         info!("server is started");

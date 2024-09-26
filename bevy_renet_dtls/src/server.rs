@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use bevy_renet::{renet::{ClientId, RenetServer}, RenetReceive, RenetSend};
 use bevy_dtls::server::{
     dtls_server::{ConnIndex, DtlsServer}, 
-    health::{self, DtlsServerClosed, DtlsServerError}
+    event::{self, DtlsServerEvent}
 };
 use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
@@ -43,7 +43,7 @@ impl RenetServerDtlsExt for RenetServer {
 fn acpt_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>,
-    mut errors: EventWriter<DtlsServerError>
+    mut errors: EventWriter<DtlsServerEvent>
 ) {
     if dtls_server.is_closed() {
         return;
@@ -55,7 +55,7 @@ fn acpt_system(
         };
 
         if let Err(e) = dtls_server.start_conn(conn_idx) {
-            errors.send(DtlsServerError::Error { 
+            errors.send(DtlsServerEvent::Error { 
                 err: anyhow!("conn {conn_idx:?} could not be started: {e}") 
             });
 
@@ -71,7 +71,7 @@ fn acpt_system(
 fn recv_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>,
-    mut errors: EventWriter<DtlsServerError>
+    mut errors: EventWriter<DtlsServerEvent>
 ) {
     if dtls_server.is_closed() {
         return;
@@ -86,7 +86,7 @@ fn recv_system(
             &bytes, 
             conn_idx.to_renet_id()
         ) {
-            errors.send(DtlsServerError::ConnError { 
+            errors.send(DtlsServerEvent::ConnError { 
                 conn_index: conn_idx, 
                 err: anyhow!("error on receiving conn {conn_idx:?}: {e}")
             });
@@ -97,7 +97,7 @@ fn recv_system(
 fn send_system(
     mut renet_server: ResMut<RenetServer>,
     dtls_server: Res<DtlsServer>,
-    mut errors: EventWriter<DtlsServerError>
+    mut errors: EventWriter<DtlsServerEvent>
 ) {
     if dtls_server.is_closed() {
         return;
@@ -112,7 +112,7 @@ fn send_system(
 
         for pkt in packets {
             if let Err(e) = dtls_server.send(client_id.raw(), Bytes::from(pkt)) {
-                errors.send(DtlsServerError::ConnError { 
+                errors.send(DtlsServerEvent::ConnError { 
                     conn_index: ConnIndex::from_renet_id(&client_id), 
                     err: anyhow!("error on sending to conn {client_id}: {e}") 
                 });
@@ -149,8 +149,7 @@ impl Plugin for RenetDtlsServerPlugin {
         };
 
         app.insert_resource(dtls_server)
-        .add_event::<DtlsServerError>()
-        .add_event::<DtlsServerClosed>()
+        .add_event::<DtlsServerEvent>()
         .configure_sets(PreUpdate, DtlsSet::Recv.before(RenetReceive))
         .configure_sets(PreUpdate, DtlsSet::Acpt.before(DtlsSet::Recv))
         .configure_sets(PostUpdate, DtlsSet::Send.after(RenetSend))
@@ -170,8 +169,8 @@ impl Plugin for RenetDtlsServerPlugin {
             .run_if(resource_exists::<RenetServer>)
         )
         .add_systems(PostUpdate, (
-            health::fatal_event_system,
-            health::timeout_event_system
+            event::health_event_system,
+            event::timeout_event_system
         )
             .chain()
             .after(DtlsSet::Send)

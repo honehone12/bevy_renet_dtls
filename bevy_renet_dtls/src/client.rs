@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use bevy_renet::{renet::RenetClient, RenetReceive, RenetSend};
 use bevy_dtls::client::{
     dtls_client::{DtlsClient, DtlsClientConfig}, 
-    health::{self, DtlsClientError}
+    event::{self, DtlsClientEvent}
 };
 use bytes::Bytes;
 use rustls::crypto::aws_lc_rs;
@@ -48,7 +48,7 @@ impl RenetClientDtlsExt for RenetClient {
 fn send_system(
     mut renet_client: ResMut<RenetClient>,
     dtls_client: Res<DtlsClient>,
-    mut errors: EventWriter<DtlsClientError>
+    mut errors: EventWriter<DtlsClientEvent>
 ) {
     if dtls_client.is_closed() {
         return;
@@ -59,7 +59,7 @@ fn send_system(
     let packets = renet_client.get_packets_to_send();
     for pkt in packets {
         if let Err(e) = dtls_client.send(Bytes::from(pkt)) {
-            errors.send(DtlsClientError::Error { 
+            errors.send(DtlsClientEvent::Error { 
                 err: anyhow!("error on sending: {e}") 
             });
 
@@ -104,7 +104,7 @@ impl Plugin for RenetDtlsClientPlugin {
         };
 
         app.insert_resource(dtls_client)
-        .add_event::<DtlsClientError>()
+        .add_event::<DtlsClientEvent>()
         .configure_sets(PreUpdate, DtlsSet::Recv.before(RenetReceive))
         .configure_sets(PostUpdate, DtlsSet::Send.after(RenetSend))
         .add_systems(PreUpdate, 
@@ -118,8 +118,8 @@ impl Plugin for RenetDtlsClientPlugin {
             .run_if(resource_exists::<RenetClient>)
         )
         .add_systems(PostUpdate, (
-            health::fatal_event_system,
-            health::timeout_event_system
+            event::health_event_system,
+            event::timeout_event_system
         )
             .chain()
             .after(DtlsSet::Send)

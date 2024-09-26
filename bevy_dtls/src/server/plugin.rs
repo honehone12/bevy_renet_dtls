@@ -3,12 +3,12 @@ use bevy::prelude::*;
 use rustls::crypto::aws_lc_rs;
 use super::{
     dtls_server::DtlsServer, 
-    health::{self, DtlsServerError, DtlsServerClosed}
+    event::{self, DtlsServerEvent}
 };
 
 fn accept_system(
     mut dtls_server: ResMut<DtlsServer>,
-    mut errors: EventWriter<DtlsServerError>
+    mut errors: EventWriter<DtlsServerEvent>
 ) {
     if dtls_server.is_closed() {
         return;
@@ -20,7 +20,7 @@ fn accept_system(
         };
     
         if let Err(e) = dtls_server.start_conn(conn_idx) {
-            errors.send(DtlsServerError::Error { 
+            errors.send(DtlsServerEvent::Error { 
                 err: anyhow!("conn {conn_idx:?} could not be started: {e}") 
             });
 
@@ -57,12 +57,11 @@ impl Plugin for DtlsServerPlugin {
         };
 
         app.insert_resource(dtls_server)
-        .add_event::<DtlsServerError>()
-        .add_event::<DtlsServerClosed>()
+        .add_event::<DtlsServerEvent>()
         .add_systems(PreUpdate, accept_system)
         .add_systems(PostUpdate, (
-            health::fatal_event_system,
-            health::timeout_event_system
+            event::health_event_system,
+            event::timeout_event_system
         ).chain());
     }
 }

@@ -8,13 +8,19 @@ use bevy_replicon_renet::{
     RenetChannelsExt, RepliconRenetPlugins
 };
 use bevy_renet_dtls::{
-    client::{RenetClientDtlsExt, RenetDtlsClientPlugin}, dtls::{
+    client::{RenetClientDtlsExt, RenetDtlsClientPlugin}, 
+    dtls::{
         client::{
-            cert_option::ClientCertOption, dtls_client::{DtlsClient, DtlsClientConfig}, health::DtlsClientError
+            cert_option::ClientCertOption, 
+            dtls_client::{DtlsClient, DtlsClientConfig}, 
+            event::DtlsClientEvent
         }, server::{
-            cert_option::ServerCertOption, dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError
+            cert_option::ServerCertOption, 
+            dtls_server::{DtlsServer, DtlsServerConfig}, 
+            event::DtlsServerEvent
         }
-    }, server::RenetDtlsServerPlugin
+    }, 
+    server::RenetDtlsServerPlugin
 };
 use serde::{Serialize, Deserialize};
 use clap::Parser;
@@ -235,9 +241,9 @@ fn draw_boxes(mut gizmos: Gizmos, players: Query<(&PlayerPosition, &PlayerColor)
     }
 }
 
-fn handle_error(
-    mut server_errors: EventReader<DtlsServerError>,
-    mut client_errors: EventReader<DtlsClientError>
+fn handle_event(
+    mut server_errors: EventReader<DtlsServerEvent>,
+    mut client_errors: EventReader<DtlsClientEvent>
 ) {
     for e in server_errors.read() {
         error!("{e:?}");
@@ -264,7 +270,7 @@ impl Plugin for SimpleBoxPlugin {
                 (
                     apply_movement.run_if(has_authority), 
                     handle_connections.run_if(server_running), 
-                    (draw_boxes, read_input, handle_error),
+                    (draw_boxes, read_input, handle_event),
                 ),
             );
     }

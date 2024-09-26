@@ -4,7 +4,7 @@ use bytes::Bytes;
 use super::dtls_server::{ConnIndex, DtlsServer, DtlsServerTimeout};
 
 #[derive(Event, Debug)]
-pub enum DtlsServerError {
+pub enum DtlsServerEvent {
     SendTimeout {
         conn_index: ConnIndex,
         bytes: Bytes
@@ -21,12 +21,9 @@ pub enum DtlsServerError {
     }
 }
 
-#[derive(Event)]
-pub struct DtlsServerClosed;
-
 pub fn timeout_event_system(
     mut dtls_server: ResMut<DtlsServer>,
-    mut errors: EventWriter<DtlsServerError>
+    mut errors: EventWriter<DtlsServerEvent>
 ) {
     loop {
         let Err(e) = dtls_server.timeout_check() else {
@@ -35,13 +32,13 @@ pub fn timeout_event_system(
     
         match e {
             DtlsServerTimeout::Send { conn_index, bytes } => {
-                errors.send(DtlsServerError::SendTimeout { 
+                errors.send(DtlsServerEvent::SendTimeout { 
                     conn_index, 
                     bytes 
                 }); 
             }
             DtlsServerTimeout::Recv(idx) => {
-                errors.send(DtlsServerError::RecvTimeout { 
+                errors.send(DtlsServerEvent::RecvTimeout { 
                     conn_index: idx 
                 });
             }
@@ -49,23 +46,21 @@ pub fn timeout_event_system(
     }
 }
 
-pub fn fatal_event_system(
+pub fn health_event_system(
     mut dtls_server: ResMut<DtlsServer>,
-    mut errors: EventWriter<DtlsServerError>,
-    mut closed: EventWriter<DtlsServerClosed>
+    mut errors: EventWriter<DtlsServerEvent>
 ) {
     let health = dtls_server.health_check();
     if let Some(r) = health.listener {
         if let Err(e) = r {
-            errors.send(DtlsServerError::Error { 
+            errors.send(DtlsServerEvent::Error { 
                 err: anyhow!("fatal error from listener: {e}")
             });
         }
-        closed.send(DtlsServerClosed);
     }
     for (idx, r) in health.sender {
         if let Err(e) = r {
-            errors.send(DtlsServerError::ConnError { 
+            errors.send(DtlsServerEvent::ConnError { 
                 conn_index: idx, 
                 err: anyhow!("fatal error from sender: {e}")
             });
@@ -73,7 +68,7 @@ pub fn fatal_event_system(
     }
     for (idx, r) in health.recver {
         if let Err(e) = r {
-            errors.send(DtlsServerError::ConnError { 
+            errors.send(DtlsServerEvent::ConnError { 
                 conn_index: idx, 
                 err: anyhow!("fatal error from recver: {e}")
             });

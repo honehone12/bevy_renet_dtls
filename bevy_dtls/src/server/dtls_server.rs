@@ -47,6 +47,19 @@ pub struct DtlsServerConfig {
     pub cert_option: ServerCertOption
 }
 
+impl DtlsServerConfig {
+    async fn listen(self)
+    -> anyhow::Result<Arc<dyn Listener + Sync + Send>> {
+        let listener = listener::listen(
+            (self.listen_addr, self.listen_port), 
+            self.cert_option.to_dtls_config()?
+        ).await?;
+
+        debug!("dtls server listening at {}", self.listen_addr);
+        Ok(Arc::new(listener))
+    }
+}
+
 #[derive(Debug)]
 pub enum DtlsServerTimeout {
     Send{
@@ -599,22 +612,11 @@ impl DtlsServer {
     fn start_listen(&mut self, config: DtlsServerConfig) 
     -> anyhow::Result<()> {
         let listener = future::block_on(
-            self.runtime.spawn(Self::listen(config))
+            self.runtime.spawn(config.listen())
         )??;
         self.listener = Some(listener);
 
         Ok(())
-    }
-
-    async fn listen(config: DtlsServerConfig)
-    -> anyhow::Result<Arc<dyn Listener + Sync + Send>> {
-        let listener = listener::listen(
-            (config.listen_addr, config.listen_port), 
-            config.cert_option.to_dtls_config()?
-        ).await?;
-
-        debug!("dtls server listening at {}", config.listen_addr);
-        Ok(Arc::new(listener))
     }
 
     fn start_acpt_loop(&mut self)

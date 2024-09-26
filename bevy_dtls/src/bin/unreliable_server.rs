@@ -5,7 +5,10 @@ use bevy::{
     prelude::*
 };
 use bevy_dtls::server::{
-    cert_option::ServerCertOption, dtls_server::{DtlsServer, DtlsServerConfig}, health::DtlsServerError, plugin::DtlsServerPlugin
+    cert_option::ServerCertOption, 
+    dtls_server::{DtlsServer, DtlsServerConfig}, 
+    event::DtlsServerEvent, 
+    plugin::DtlsServerPlugin
 };
 use bytes::Bytes;
 
@@ -39,7 +42,7 @@ fn recv_hellooon_system(mut dtls_server: ResMut<DtlsServer>) {
     }
 }
 
-fn handle_net_error(mut errors: EventReader<DtlsServerError>) {
+fn handle_net_event(mut errors: EventReader<DtlsServerEvent>) {
     for e in errors.read() {
         error!("{e:?}");
     }
@@ -66,7 +69,7 @@ impl Plugin for SereverPlugin {
 
         app.insert_resource(ServerHellooonCounter(0))
         .add_systems(Update, (
-            handle_net_error,
+            handle_net_event,
             recv_hellooon_system,
             send_hellooon_system
         ).chain());

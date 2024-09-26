@@ -4,7 +4,7 @@ use bytes::Bytes;
 use super::dtls_client::{DtlsClient, DtlsClientTimeout};
 
 #[derive(Event, Debug)]
-pub enum DtlsClientError {
+pub enum DtlsClientEvent {
     SendTimeout {
         bytes: Bytes
     },
@@ -15,7 +15,7 @@ pub enum DtlsClientError {
 
 pub fn timeout_event_system(
     mut dtls_client: ResMut<DtlsClient>,
-    mut errors: EventWriter<DtlsClientError>
+    mut dtls_events: EventWriter<DtlsClientEvent>
 ) {
     loop {
         let Err(e) = dtls_client.timeout_check() else {
@@ -24,7 +24,7 @@ pub fn timeout_event_system(
 
         match e {
             DtlsClientTimeout::Send(bytes) => {
-                errors.send(DtlsClientError::SendTimeout { 
+                dtls_events.send(DtlsClientEvent::SendTimeout { 
                     bytes
                 });
             }
@@ -32,23 +32,25 @@ pub fn timeout_event_system(
     }
 }
 
-pub fn fatal_event_system(
+pub fn health_event_system(
     mut dtls_client: ResMut<DtlsClient>,
-    mut errors: EventWriter<DtlsClientError>
+    mut dtls_events: EventWriter<DtlsClientEvent>
 ) {
     let health = dtls_client.health_check();
     if let Some(r) = health.sender {
         if let Err(e) = r {
-            errors.send(DtlsClientError::Error { 
+            dtls_events.send(DtlsClientEvent::Error { 
                 err: anyhow!("fatal error from sender: {e}")
             });
         }
     }
     if let Some(r) = health.recver {
         if let Err(e) = r {
-            errors.send(DtlsClientError::Error { 
+            dtls_events.send(DtlsClientEvent::Error { 
                 err: anyhow!("fatal error from recver: {e}")
             });
         }
     }
+    
+    
 }

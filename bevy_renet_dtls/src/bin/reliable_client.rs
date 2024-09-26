@@ -3,7 +3,7 @@ use bevy::{log::{Level, LogPlugin}, prelude::*};
 use bevy_dtls::client::{
     cert_option::ClientCertOption, 
     dtls_client::{DtlsClient, DtlsClientConfig}, 
-    health::DtlsClientError
+    event::DtlsClientEvent
 };
 use bevy_renet::{
     renet::{ConnectionConfig, DefaultChannel, RenetClient}, 
@@ -40,7 +40,7 @@ fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
     }
 }
 
-fn handle_net_error(mut errors: EventReader<DtlsClientError>) {
+fn handle_net_event(mut errors: EventReader<DtlsClientEvent>) {
     for e in errors.read() {
         error!("{e:?}");
     }
@@ -76,7 +76,7 @@ impl Plugin for ClientPlugin {
         app.insert_resource(renet_client)
         .insert_resource(ClientHellooonCounter(0))
         .add_systems(Update, (
-            handle_net_error,
+            handle_net_event,
             recv_hellooon_system,
             send_hellooon_system
         ).chain());

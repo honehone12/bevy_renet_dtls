@@ -3,7 +3,7 @@ use bevy::{log::{Level, LogPlugin}, prelude::*};
 use bevy_dtls::client::{
     cert_option::ClientCertOption, 
     dtls_client::{DtlsClient, DtlsClientConfig}, 
-    health::DtlsClientError
+    event::DtlsClientEvent
 };
 use bevy_renet::{
     renet::{ConnectionConfig, DefaultChannel, RenetClient}, 
@@ -82,6 +82,7 @@ fn handle_restart(
 
     // we have to wait a sec for server cleaning up, so
     // i just want spend some time here
+    todo!("no need to wait so long anymore");
     restart.1 += 1;
     if restart.1 <= 100 {
         return;
@@ -115,12 +116,12 @@ fn handle_net_error(
     mut commands: Commands,
     mut renet_client: Option<ResMut<RenetClient>>,
     mut dtls_client: ResMut<DtlsClient>,
-    mut errors: EventReader<DtlsClientError>,
+    mut errors: EventReader<DtlsClientEvent>,
 ) {
     for e in errors.read() {
         match e {
-            DtlsClientError::SendTimeout { .. } => error!("timeout sending"),
-            DtlsClientError::Error { err } => {
+            DtlsClientEvent::SendTimeout { .. } => error!("timeout sending"),
+            DtlsClientEvent::Error { err } => {
                 if err.to_string()
                 .ends_with("Alert is Fatal or Close Notify") {
                     warn!("server disconneted: {err}");
