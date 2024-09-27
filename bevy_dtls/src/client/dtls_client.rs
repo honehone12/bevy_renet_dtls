@@ -57,7 +57,8 @@ impl DtlsClientConfig {
 
 pub struct DtlsClientHealth {
     pub sender: Option<anyhow::Result<()>>,
-    pub recver: Option<anyhow::Result<()>>
+    pub recver: Option<anyhow::Result<()>>,
+    pub is_closed: bool
 }
 
 pub enum DtlsClientTimeout {
@@ -203,6 +204,7 @@ pub struct DtlsClient {
     runtime: Arc<Runtime>,
 
     conn: Option<Arc<dyn Conn + Sync + Send>>,
+    is_running: bool,
 
     send_timeout_secs: u64,
     send_handle: Option<JoinHandle<anyhow::Result<()>>>,
@@ -228,7 +230,8 @@ impl DtlsClient {
             runtime: Arc::new(rt),
 
             conn: None,
-            
+            is_running: false,
+
             send_timeout_secs,
             send_handle: None,
             send_tx: None,
@@ -321,21 +324,32 @@ impl DtlsClient {
 
     #[inline]
     pub fn health_check(&mut self) -> DtlsClientHealth {
+        let sender_health = self.health_check_send_loop();
+        let recver_health = self.health_check_recv_loop();
+        let is_closed = self.is_running
+        && self.send_handle.is_none()
+        && self.recv_handle.is_none();
+
+        if is_closed {
+            self.conn = None;
+            self.is_running = false;
+        }
+        
         DtlsClientHealth{
-            sender: self.health_check_send_loop(),
-            recver: self.health_check_recv_loop()
+            sender: sender_health,
+            recver: recver_health,
+            is_closed 
         }
     }
 
     #[inline]
-    pub fn close(&mut self) {
+    pub fn disconnect(&mut self) {
         if self.conn.is_none() {
             return;
         }
 
         self.close_send_loop();
         self.close_recv_loop();
-        self.conn = None;
     }
 
     fn start_connect(&mut self, config: DtlsClientConfig) 
@@ -372,6 +386,7 @@ impl DtlsClient {
 
         let handle = self.runtime.spawn(sender.send_loop());
         self.send_handle = Some(handle);
+        self.is_running = true;
 
         debug!("send loop has started");
         Ok(())
@@ -424,6 +439,7 @@ impl DtlsClient {
 
         let handle = self.runtime.spawn(recver.recv_loop());
         self.recv_handle = Some(handle);
+        self.is_running = true;
 
         debug!("recv loop has started");
         Ok(())

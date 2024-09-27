@@ -41,7 +41,7 @@ impl RenetClientDtlsExt for RenetClient {
         dtls_client: &mut DtlsClient
     ) {
         self.disconnect();
-        dtls_client.close();    
+        dtls_client.disconnect();    
     }
 }
 
