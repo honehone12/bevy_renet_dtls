@@ -426,26 +426,19 @@ impl DtlsServer {
 
     #[inline]
     pub fn is_closed(&self) -> bool {
-        let closed = self.listener.is_none()
-        && self.acpt_handle.is_none()
-        && self.conn_map.read()
+        // set closed by conn healtch check
+        self.conn_map.read()
         .unwrap()
-        .is_empty();
-
-        if cfg!(debug_assertions) {
-            if closed && (
-                self.acpt_rx.is_some()
-                || self.close_acpt_tx.is_some()
-                || self.recv_tx.is_some()
-                || self.recv_rx.is_some()
-                || self.timeout_rx.is_some()
-                || self.timeout_tx.is_some()
-            ) {
-                panic!("conn and handles are closed, but channels are still open"); 
-            }
-        }
-
-        closed
+        .is_empty()        
+        
+        &&self.listener.is_none()
+        && self.acpt_handle.is_none()
+        && self.acpt_rx.is_none()
+        && self.close_acpt_tx.is_none()
+        && self.recv_tx.is_none()
+        && self.recv_rx.is_none()
+        && self.timeout_rx.is_none()
+        && self.timeout_tx.is_none()
     }
 
     #[inline]

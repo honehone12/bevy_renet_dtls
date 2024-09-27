@@ -24,15 +24,15 @@ struct ServerHellooonCounter(u64);
 
 fn send_hellooon_system(
     mut renet_server: ResMut<RenetServer>,
-    // mut dtls_server: ResMut<DtlsServer>,
-    dtls_server: Res<DtlsServer>,
+    mut dtls_server: ResMut<DtlsServer>,
+    //dtls_server: Res<DtlsServer>,
     mut counter: ResMut<ServerHellooonCounter>
 ) {
     let renet_len = renet_server.connected_clients();
     let dtls_len = dtls_server.connected_clients();
     
     if renet_len != dtls_len {
-        warn!("connected clients mismatch, renet: {renet_len}, dtls: {dtls_len}");
+        info!("connected clients mismatch, renet: {renet_len}, dtls: {dtls_len}");
     }
     if renet_len == 0 {
         return;
@@ -44,12 +44,12 @@ fn send_hellooon_system(
     counter.0 += 1;
     debug!("broadcasted: {}", counter.0);
 
-    // if counter.0 % 10 == 0 {
-    //     warn!("disconnecting all...");
-    //     // disconnect all
-    //     renet_server.disconnect_all_dtls(&mut dtls_server);
-    //     counter.0 = 0;
-    // }
+    if counter.0 % 10 == 0 {
+        info!("disconnecting all...");
+        // disconnect all
+        renet_server.disconnect_all_dtls(&mut dtls_server);
+        counter.0 = 0;
+    }
 }
 
 fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {

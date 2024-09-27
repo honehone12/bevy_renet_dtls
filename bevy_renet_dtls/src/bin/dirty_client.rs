@@ -42,7 +42,7 @@ fn send_hellooon_system(
         return;
     }
 
-    warn!("disconnecting. will restart soon...");
+    info!("disconnecting. will restart soon...");
     // disconnect dtls and close renet
     renet_client.close_dtls(&mut dtls_client);
     // remove renet client for renewal

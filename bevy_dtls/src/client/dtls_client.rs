@@ -246,24 +246,18 @@ impl DtlsClient {
 
     #[inline]
     pub fn is_closed(&self) -> bool {
-        let closed = self.conn.is_none()
-        && !self.is_running 
+        // set closed by health check
+        !self.is_running 
+        && self.conn.is_none() 
         && self.recv_handle.is_none()
-        && self.send_handle.is_none();
+        && self.send_handle.is_none()
 
-        if cfg!(debug_assertions) {
-            if closed && (
-                self.send_tx.is_some()
-                || self.send_timeout_rx.is_some()
-                || self.close_send_tx.is_some()
-                || self.recv_rx.is_some()
-                || self.close_recv_tx.is_some()
-            ) {
-                panic!("conn and handles are closed, but channels are still open");   
-            }
-        }
-
-        closed
+        // set closed by calling disconnect
+        && self.send_tx.is_none()
+        && self.send_timeout_rx.is_none()
+        && self.close_send_tx.is_none()
+        && self.recv_rx.is_none()
+        && self.close_recv_tx.is_none()
     }
 
     #[inline]
