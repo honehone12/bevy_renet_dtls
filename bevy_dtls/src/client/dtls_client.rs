@@ -57,8 +57,7 @@ impl DtlsClientConfig {
 
 pub struct DtlsClientHealth {
     pub sender: Option<anyhow::Result<()>>,
-    pub recver: Option<anyhow::Result<()>>,
-    pub is_closed: bool
+    pub recver: Option<anyhow::Result<()>>
 }
 
 pub enum DtlsClientTimeout {
@@ -339,7 +338,6 @@ impl DtlsClient {
         DtlsClientHealth{
             sender: sender_health,
             recver: recver_health,
-            is_closed 
         }
     }
 

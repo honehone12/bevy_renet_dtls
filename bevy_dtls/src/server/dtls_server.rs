@@ -71,8 +71,7 @@ struct DtlsServerClose;
 pub struct DtlsConnHealth {
     pub conn_index: ConnIndex,
     pub sender: Option<anyhow::Result<()>>,
-    pub recver: Option<anyhow::Result<()>>,
-    pub is_closed: bool
+    pub recver: Option<anyhow::Result<()>>
 }
 
 #[derive(Debug)]
@@ -143,17 +142,26 @@ impl DtlsServerAcpter {
             let idx = index;
             index = match index.checked_add(1) {
                 Some(i) => i,
-                None => break Err(anyhow!("conn index overflow"))
+                None => {
+                    if let Err(e) = conn.close().await {
+                        error!("error on disconnect {addr}: {e}");
+                    }
+                    break Err(anyhow!("conn index overflow"));
+                }
             };
             
+            if let Err(e) = self.acpt_tx.send(ConnIndex(idx)) {
+                if let Err(e) = conn.close().await {
+                    error!("error on disconnect {addr}: {e}");
+                }
+                break Err(anyhow!(e));
+            }
+
             let mut w = self.conn_map.write()
             .unwrap();
             debug_assert!(!w.contains_key(&idx));
-            w.insert(idx, DtlsConn::new(conn));
 
-            if let Err(e) = self.acpt_tx.send(ConnIndex(idx)) {
-                break Err(anyhow!(e));
-            }
+            w.insert(idx, DtlsConn::new(conn));
             debug!("conn from {addr} accepted");
         };
 
@@ -788,7 +796,9 @@ impl DtlsServer {
                     false
                 }; 
 
-                s.push((*idx, sender_finished, recver_finished));
+                if sender_finished || recver_finished {
+                    s.push((*idx, sender_finished, recver_finished));
+                }
             }
             s
         };
@@ -836,8 +846,7 @@ impl DtlsServer {
             conns_health.push(DtlsConnHealth{
                 conn_index: ConnIndex(idx),
                 sender: sender_health,
-                recver: recver_health,
-                is_closed
+                recver: recver_health
             });
         }
         conns_health
