@@ -51,6 +51,4 @@ pub fn health_event_system(
             });
         }
     }
-    
-    
 }

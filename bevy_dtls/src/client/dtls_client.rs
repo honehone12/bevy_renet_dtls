@@ -247,7 +247,8 @@ impl DtlsClient {
 
     #[inline]
     pub fn is_closed(&self) -> bool {
-        let closed = self.conn.is_none() 
+        let closed = self.conn.is_none()
+        && !self.is_running 
         && self.recv_handle.is_none()
         && self.send_handle.is_none();
 
