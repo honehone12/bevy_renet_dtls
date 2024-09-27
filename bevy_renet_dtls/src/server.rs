@@ -174,7 +174,6 @@ impl Plugin for RenetDtlsServerPlugin {
         )
             .chain()
             .after(DtlsSet::Send)
-            .run_if(resource_exists::<RenetServer>)
         );
     }
 }

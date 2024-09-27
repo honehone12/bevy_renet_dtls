@@ -40,14 +40,14 @@ pub fn health_event_system(
     if let Some(r) = health.sender {
         if let Err(e) = r {
             dtls_events.send(DtlsClientEvent::Error { 
-                err: anyhow!("fatal error from sender: {e}")
+                err: anyhow!("error from sender: {e}")
             });
         }
     }
     if let Some(r) = health.recver {
         if let Err(e) = r {
             dtls_events.send(DtlsClientEvent::Error { 
-                err: anyhow!("fatal error from recver: {e}")
+                err: anyhow!("error from recver: {e}")
             });
         }
     }

@@ -16,7 +16,7 @@ use bytes::Bytes;
 struct ClientHellooonCounter(u64);
 
 #[derive(Resource)]
-struct Restart(bool, u64);
+struct Restart(bool);
 
 fn send_hellooon_system(
     mut commands: Commands,
@@ -49,7 +49,6 @@ fn send_hellooon_system(
     commands.remove_resource::<RenetClient>();
     
     restart.0 = true;
-    restart.1 = 0;
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
@@ -80,13 +79,6 @@ fn handle_restart(
         return;
     }
 
-    // we have to wait a sec for cleaning up of both cient and server  
-    // just spending some time here
-    // restart.1 += 1;
-    // if restart.1 <= 10 {
-    //     return;
-    // }
-
     info!("restarting...");
     // insert new renet client
     let mut new_renet = RenetClient::new(ConnectionConfig::default());
@@ -108,7 +100,6 @@ fn handle_restart(
 
     commands.insert_resource(new_renet);
     restart.0 = false;
-    restart.1 = 0;
 }
 
 fn handle_net_event(
@@ -163,7 +154,7 @@ impl Plugin for ClientPlugin {
 
         app.insert_resource(renet_client)
         .insert_resource(ClientHellooonCounter(0))
-        .insert_resource(Restart(false, 0))
+        .insert_resource(Restart(false))
         .add_systems(Update, (
             handle_net_event,
             send_hellooon_system

@@ -54,23 +54,22 @@ pub fn health_event_system(
     if let Some(r) = health.listener {
         if let Err(e) = r {
             errors.send(DtlsServerEvent::Error { 
-                err: anyhow!("fatal error from listener: {e}")
+                err: anyhow!("error from listener: {e}")
             });
         }
     }
-    for (idx, r) in health.sender {
-        if let Err(e) = r {
+
+    for conn_health in health.conns {
+        if let Some(Err(e)) = conn_health.sender {
             errors.send(DtlsServerEvent::ConnError { 
-                conn_index: idx.index(), 
-                err: anyhow!("fatal error from sender: {e}")
+                conn_index: conn_health.conn_index.index(), 
+                err: anyhow!("error from sender: {e}")
             });
         }
-    }
-    for (idx, r) in health.recver {
-        if let Err(e) = r {
+        if let Some(Err(e)) = conn_health.recver {
             errors.send(DtlsServerEvent::ConnError { 
-                conn_index: idx.index(), 
-                err: anyhow!("fatal error from recver: {e}")
+                conn_index: conn_health.conn_index.index(), 
+                err: anyhow!("error from recver: {e}")
             });
         }
     }
