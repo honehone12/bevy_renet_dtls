@@ -72,7 +72,7 @@ pub struct DtlsConnHealth {
     pub conn_index: ConnIndex,
     pub sender: Option<anyhow::Result<()>>,
     pub recver: Option<anyhow::Result<()>>,
-    pub closed: bool
+    pub is_closed: bool
 }
 
 #[derive(Debug)]
@@ -333,7 +333,7 @@ impl DtlsServerSender {
 
 pub(super) struct DtlsConn {
     conn: Arc<dyn Conn + Sync + Send>,
-    running: bool,
+    is_running: bool,
 
     recv_handle: Option<JoinHandle<anyhow::Result<()>>>,
     close_recv_tx: Option<TokioTx<DtlsServerClose>>,
@@ -348,7 +348,7 @@ impl DtlsConn {
     pub(super) fn new(conn: Arc<dyn Conn + Sync + Send>) -> Self {
         Self{
             conn,
-            running: false,
+            is_running: false,
             recv_handle: None,
             close_recv_tx: None,
             send_handle: None,
@@ -728,7 +728,7 @@ impl DtlsServer {
 
         let handle = self.runtime.spawn(recver.recv_loop());
         dtls_conn.recv_handle = Some(handle);
-        dtls_conn.running = true;
+        dtls_conn.is_running = true;
         
         debug!("recv loop {conn_idx:?} has started");
         Ok(())
@@ -761,7 +761,7 @@ impl DtlsServer {
 
         let handle = self.runtime.spawn(sender.send_loop());
         dtls_conn.send_handle = Some(handle);
-        dtls_conn.running = true;
+        dtls_conn.is_running = true;
 
         debug!("send loop {conn_idx:?} has started");
         Ok(())
@@ -769,72 +769,77 @@ impl DtlsServer {
 
     fn health_check_conn_loop(&mut self)
     -> Vec<DtlsConnHealth> {
-        let (conns_health, closed_conns) = {
-            let mut conns_health = vec![];
-            let mut closed_conns = vec![];
+        let mut conns_health = vec![];
             
-            let mut w = self.conn_map.write()
+        let conn_statuses = {
+            let mut s = vec![];
+            let r = self.conn_map.read()
             .unwrap();
-            for (idx, dtls_conn) in w.iter_mut() {
-                let conn_index = ConnIndex(*idx);
-
-                let sender = if let Some(ref handle_ref) = dtls_conn.send_handle {
-                    if handle_ref.is_finished() {
-                        let handle = dtls_conn.send_handle.take()
-                        .unwrap();
-                        let r = match future::block_on(handle) {
-                            Ok(r) => r,
-                            Err(e) => Err(anyhow!(e))
-                        };
-                        Some(r)
-                    } else {
-                        None
-                    }
+            for (idx, dtls_conn) in r.iter() {
+                let sender_finished = if let Some(ref handle_ref) = dtls_conn.send_handle {
+                    handle_ref.is_finished()
                 } else {
-                    None
+                    false
                 };
 
-                let recver = if let Some(ref handle_ref) = dtls_conn.recv_handle {
-                    if handle_ref.is_finished() {
-                        let handle = dtls_conn.recv_handle.take()
-                        .unwrap();
-                        let r = match future::block_on(handle) {
-                            Ok(r) => r,
-                            Err(e) => Err(anyhow!(e))
-                        };
-                        Some(r)
-                    } else {
-                        None
-                    }
+                let recver_finished = if let Some(ref handle_ref) = dtls_conn.recv_handle {
+                    handle_ref.is_finished()
                 } else {
-                    None
-                };
+                    false
+                }; 
 
-                let closed = dtls_conn.running
-                && dtls_conn.send_handle.is_none()
-                && dtls_conn.recv_handle.is_none();
-                
-                if closed {
-                    closed_conns.push(*idx);
-                }
-
-                conns_health.push(DtlsConnHealth{
-                    conn_index,
-                    sender,
-                    recver,
-                    closed
-                });
+                s.push((*idx, sender_finished, recver_finished));
             }
-
-            (conns_health, closed_conns)
+            s
         };
 
         let mut w = self.conn_map.write()
         .unwrap();
-        for idx in closed_conns {
-            w.remove(&idx);
-        }
+        for (idx, sender_finished, recver_finished) in conn_statuses {
+            let dtls_conn = w.get_mut(&idx)
+            .unwrap();
 
+            let sender_health = if sender_finished {
+                let handle = dtls_conn.send_handle
+                .take()
+                .unwrap();
+                let r = match future::block_on(handle) {
+                    Ok(r) => r,
+                    Err(e) => Err(anyhow!(e))
+                };
+                Some(r)
+            } else {
+                None
+            };
+
+            let recver_health = if recver_finished {
+                let handle = dtls_conn.recv_handle
+                .take()
+                .unwrap();
+                let r = match future::block_on(handle) {
+                    Ok(r) => r,
+                    Err(e) => Err(anyhow!(e))
+                };
+                Some(r)
+            } else {
+                None
+            };
+
+            let is_closed = dtls_conn.is_running
+            && dtls_conn.send_handle.is_none()
+            && dtls_conn.recv_handle.is_none();
+        
+            if is_closed {
+                w.remove(&idx);
+            }
+
+            conns_health.push(DtlsConnHealth{
+                conn_index: ConnIndex(idx),
+                sender: sender_health,
+                recver: recver_health,
+                is_closed
+            });
+        }
         conns_health
     }
 }
