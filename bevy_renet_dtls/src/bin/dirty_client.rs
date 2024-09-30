@@ -16,9 +16,8 @@ use bytes::Bytes;
 struct ClientHellooonCounter(u64);
 
 fn send_hellooon_system(
-    mut commands: Commands,
     mut renet_client: ResMut<RenetClient>,
-    mut dtls_client: ResMut<DtlsClient>,
+    // mut dtls_client: ResMut<DtlsClient>,
     mut counter: ResMut<ClientHellooonCounter>
 ) {
     if renet_client.is_disconnected() {
@@ -34,11 +33,9 @@ fn send_hellooon_system(
         return;
     }
 
-    info!("disconnecting. will restart soon...");
+    // info!("disconnecting. will restart soon...");
     // disconnect dtls and close renet
-    renet_client.disconnect_dtls(&mut dtls_client);
-    // remove renet client for renewal
-    commands.remove_resource::<RenetClient>();
+    // renet_client.disconnect_dtls(&mut dtls_client);
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
@@ -75,12 +72,13 @@ fn handle_net_event(
             
                 if let Some(ref mut renet) = renet_client {
                     renet.disconnect_dtls(&mut dtls_client);
-                    commands.remove_resource::<RenetClient>();
                 }
             }
             DtlsClientEvent::ConnClosed => {
-                // this event will be emitted even when disconnect() is not called
-                debug_assert!(dtls_client.is_closed());
+                // this event will be emitted even before disconnect() is called
+                if let Some(ref mut renet) = renet_client {
+                    renet.disconnect_dtls(&mut dtls_client);
+                }
             
                 info!("restarting...");
                 // insert new renet client
@@ -101,6 +99,7 @@ fn handle_net_event(
                     panic!("{e}");
                 }
             
+                // overwrite with new client 
                 commands.insert_resource(new_renet);
             }
         }

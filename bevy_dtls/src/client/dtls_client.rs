@@ -339,10 +339,6 @@ impl DtlsClient {
 
     #[inline]
     pub fn disconnect(&mut self) {
-        if self.conn.is_none() {
-            return;
-        }
-
         self.close_send_loop();
         self.close_recv_loop();
     }
