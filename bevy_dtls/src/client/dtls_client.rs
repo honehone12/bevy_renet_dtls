@@ -22,6 +22,7 @@ use webrtc_dtls::conn::DTLSConn;
 use webrtc_util::Conn;
 use super::cert_option::ClientCertOption;
 
+#[derive(Clone)]
 pub struct DtlsClientConfig {
     pub server_addr: IpAddr,
     pub server_port: u16,
@@ -129,7 +130,10 @@ impl DtlsClientSender {
                     }
                 }
                 else => {
-                    warn!("close send tx is closed before rx is closed");
+                    warn!(
+                        "is dtls client dropped before disconnection? \
+                        sender loop is closing anyway"
+                    );
                     break Ok(());
                 }
             }
@@ -178,7 +182,10 @@ impl DtlsClientRecver {
                     }
                 }
                 else => {
-                    warn!("close recv tx is closed before rx is closed");
+                    warn!(
+                        "is dtls client dropped before disconnection? \
+                        recver loop is closing anyway"
+                    );
                     break Ok(());
                 }
             };
@@ -275,11 +282,11 @@ impl DtlsClient {
 
     pub fn send(&self, message: Bytes) -> anyhow::Result<()> {
         let Some(ref send_tx) = self.send_tx else {
-            bail!("send tx is None");
+            bail!("conn is not started or is disconnected: send tx is None");
         };
 
         if let Err(e) = send_tx.send(message) {
-            bail!("conn is not started or disconnected: {e}");
+            bail!("conn is not started or is disconnected: {e}");
         }
         Ok(())
     }
@@ -293,7 +300,7 @@ impl DtlsClient {
             Ok(b) => Some(b),
             Err(e) => {
                 if matches!(e, TryRecvError::Disconnected) {
-                    warn!("recv rx is closed before set to None: {e}");
+                    debug!("recver loop looks closed before disconnection: {e}");
                 }
                 None
             }
@@ -310,7 +317,7 @@ impl DtlsClient {
             Ok(t) => Err(t),
             Err(e) => {
                 if matches!(e, TryRecvError::Disconnected) {
-                    warn!("send timeout rx is closed before set to None: {e}");
+                    debug!("sender loop looks closed before disconnection: {e}");
                 }
                 Ok(())
             }
@@ -400,12 +407,10 @@ impl DtlsClient {
     }
 
     fn close_send_loop(&mut self) {
-        let Some(ref close_send_tx) = self.close_send_tx else {
-            return;
-        };
-
-        if let Err(e) = close_send_tx.send(DtlsClientClose) {
-            warn!("close send tx is closed before set to None: {e}");
+        if let Some(ref close_send_tx) = self.close_send_tx {
+            if let Err(e) = close_send_tx.send(DtlsClientClose) {
+                debug!("sender loop looks already closed: {e}");
+            }
         }
 
         self.close_send_tx = None;
@@ -453,12 +458,10 @@ impl DtlsClient {
     }
 
     fn close_recv_loop(&mut self) {
-        let Some(ref close_recv_tx) = self.close_recv_tx else {
-            return;
-        };
-
-        if let Err(e) = close_recv_tx.send(DtlsClientClose) {
-            warn!("close recv tx is closed before set to None: {e}");
+        if let Some(ref close_recv_tx) = self.close_recv_tx {
+            if let Err(e) = close_recv_tx.send(DtlsClientClose) {
+                debug!("recver loop loos already closed: {e}");
+            }
         }
 
         self.close_recv_tx = None;

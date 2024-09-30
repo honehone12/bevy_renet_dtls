@@ -17,7 +17,7 @@ struct ClientHellooonCounter(u64);
 
 fn send_hellooon_system(
     mut renet_client: ResMut<RenetClient>,
-    // mut dtls_client: ResMut<DtlsClient>,
+    mut dtls_client: ResMut<DtlsClient>,
     mut counter: ResMut<ClientHellooonCounter>
 ) {
     if renet_client.is_disconnected() {
@@ -29,13 +29,12 @@ fn send_hellooon_system(
     renet_client.send_message(DefaultChannel::ReliableOrdered, msg);
     counter.0 += 1;
 
-    if counter.0 % 10 != 0 {
-        return;
+    if counter.0 % 10 == 0 {
+        info!("disconnecting. will restart soon...");
+        // disconnect dtls and close renet
+        renet_client.disconnect_dtls(&mut dtls_client);
+        counter.0 = 0;
     }
-
-    // info!("disconnecting. will restart soon...");
-    // disconnect dtls and close renet
-    // renet_client.disconnect_dtls(&mut dtls_client);
 }
 
 fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
@@ -57,6 +56,7 @@ fn handle_net_event(
     mut commands: Commands,
     mut renet_client: Option<ResMut<RenetClient>>,
     mut dtls_client: ResMut<DtlsClient>,
+    client_config: Res<ClientConfig>,
     mut dtls_events: EventReader<DtlsClientEvent>,
 ) {
     for e in dtls_events.read() {
@@ -65,7 +65,7 @@ fn handle_net_event(
             DtlsClientEvent::Error { err } => {
                 if err.to_string()
                 .ends_with("Alert is Fatal or Close Notify") {
-                    warn!("server disconneted: {err}");
+                    info!("server disconneted: {err}");
                 } else {
                     error!("{err:?}");
                 }
@@ -85,16 +85,7 @@ fn handle_net_event(
                 let mut new_renet = RenetClient::new(ConnectionConfig::default());
                 if let Err(e) = new_renet.start_dtls(
                     &mut dtls_client,
-                    DtlsClientConfig{
-                        server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                        server_port: 4443,
-                        client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                        client_port: 0,
-                        cert_option: ClientCertOption::Load { 
-                            server_name: "webrtc.rs",
-                            root_ca_path: "my_certificates/server.pub.pem" 
-                        }
-                    }
+                    client_config.0.clone()
                 ) {
                     panic!("{e}");
                 }
@@ -106,6 +97,9 @@ fn handle_net_event(
     }
 }
 
+#[derive(Resource)]
+struct ClientConfig(DtlsClientConfig);
+
 struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
@@ -114,23 +108,26 @@ impl Plugin for ClientPlugin {
         let mut dtls_client = app.world_mut()
         .resource_mut::<DtlsClient>();
 
-        if let Err(e) = renet_client.start_dtls(
-            &mut dtls_client,
-            DtlsClientConfig{
-                server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                server_port: 4443,
-                client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                client_port: 0,
-                cert_option: ClientCertOption::Load { 
-                    server_name: "webrtc.rs",
-                    root_ca_path: "my_certificates/server.pub.pem" 
-                }
+        let client_config = ClientConfig(DtlsClientConfig{
+            server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server_port: 4443,
+            client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            client_port: 0,
+            cert_option: ClientCertOption::Load { 
+                server_name: "webrtc.rs",
+                root_ca_path: "my_certificates/server.pub.pem" 
             }
+        });
+
+        if let Err(e) = renet_client.start_dtls(
+            &mut dtls_client, 
+            client_config.0.clone()
         ) {
             panic!("{e}");
         }
 
-        app.insert_resource(renet_client)
+        app.insert_resource(client_config)
+        .insert_resource(renet_client)
         .insert_resource(ClientHellooonCounter(0))
         .add_systems(Update, (
             handle_net_event,

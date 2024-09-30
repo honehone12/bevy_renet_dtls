@@ -36,6 +36,7 @@ impl ConnIndex {
     }
 }
 
+#[derive(Clone)]
 pub struct DtlsServerConfig {
     pub listen_addr: IpAddr,
     pub listen_port: u16,
@@ -125,7 +126,10 @@ impl DtlsServerAcpter {
                     }
                 }
                 else => {
-                    warn!("close acpt tx is dropped before rx is closed");
+                    warn!(
+                        "is dtls server dropped before disconnection? \
+                        acpter loop is closing anyway"
+                    );
                     break Ok(());
                 }
             };
@@ -238,7 +242,8 @@ impl DtlsServerRecver {
                 }
                 else => {
                     warn!(
-                        "close recv tx {:?} is closed before rx is closed", 
+                        "is dtls conn {:?} closed before disconnection? \
+                        recver loop is closing anyway", 
                         self.conn_idx
                     );
                     break Ok(());
@@ -326,7 +331,8 @@ impl DtlsServerSender {
                 }
                 else => {
                     warn!(
-                        "close send tx {:?} is closed before rx is closed", 
+                        "is dtls conn {:?} closed before disconnection? \
+                        sender loop is closing anyway", 
                         self.conn_idx
                     );
                     break Ok(());
@@ -505,14 +511,20 @@ impl DtlsServer {
         let r = self.conn_map.read()
         .unwrap();
         let Some(ref dtls_conn) = r.get(&conn_index) else {
-            bail!("dtls conn {conn_index} is None");
+            bail!(
+                "conn {conn_index} is not started or is disconnected: \
+                dtls conn is None"
+            );
         };
         let Some(ref send_tx) = dtls_conn.send_tx else {
-            bail!("send tx {conn_index} is None");
+            bail!(
+                "conn {conn_index} is not started or is disconnected: \
+                send tx is None"
+            );
         };
 
         if let Err(e) = send_tx.send(message) {
-            bail!("conn {conn_index} is not started or disconnected: {e}");
+            bail!("conn {conn_index} is not started or is disconnected: {e}");
         }
         Ok(())
     }
@@ -523,12 +535,15 @@ impl DtlsServer {
 
         for (idx, ref dtls_conn) in r.iter() {
             let Some(ref send_tx) = dtls_conn.send_tx else {
-                warn!("send tx: {idx} is None");
+                warn!("skipping {idx} that is not started or already closed");
                 continue;
             };
     
             if let Err(e) = send_tx.send(message.clone()) {
-                warn!("conn: {idx} is not started or disconnected: {e}");
+                warn!(
+                    "skipping {idx} with error: {e} \
+                    that is not started or already closed"
+                );
                 continue;
             }
         }
@@ -545,7 +560,7 @@ impl DtlsServer {
             Ok(ib) => Some(ib),
             Err(e) => {
                 if matches!(e, TryRecvError::Disconnected) {
-                    warn!("recv rx is closed before set to None: {e}");
+                    debug!("recver loop looks closed before disconnection: {e}");
                 }
                 None
             }
@@ -562,7 +577,10 @@ impl DtlsServer {
             Ok(t) => Err(t),
             Err(e) => {
                 if matches!(e, TryRecvError::Disconnected) {
-                    warn!("timeout rx is closed before set to None: {e}");
+                    error!(
+                        "timeout tx is dropped or closed but rx is still living: {e} \
+                        this is not observed generally"
+                    );
                 }
                 Ok(())
             }
@@ -580,27 +598,25 @@ impl DtlsServer {
     pub fn disconnect(&mut self, conn_index: u64) {
         let mut w = self.conn_map.write()
         .unwrap();
-        let Some(dtls_conn) = w.get_mut(&conn_index) else {
-            return;
-        };
-        
-        if let Some(ref close_recv_tx) = dtls_conn.close_recv_tx {
-            if let Err(e) = close_recv_tx.send(DtlsServerClose) {
-                warn!("close recv tx {conn_index} is closed before set to None: {e}");
+        if let Some(dtls_conn) = w.get_mut(&conn_index) {
+            if let Some(ref close_recv_tx) = dtls_conn.close_recv_tx {
+                if let Err(e) = close_recv_tx.send(DtlsServerClose) {
+                    debug!("recver loop {conn_index} looks alredy closed: {e}");
+                }
+    
+                dtls_conn.close_recv_tx = None;    
+            };
+    
+            if let Some(ref close_send_tx) = dtls_conn.close_send_tx {
+                if let Err(e) = close_send_tx.send(DtlsServerClose) {
+                    debug!("sender loop {conn_index} looks already closed: {e}");
+                }
+    
+                dtls_conn.close_send_tx = None;
             }
-
-            dtls_conn.close_recv_tx = None;    
-        };
-
-        if let Some(ref close_send_tx) = dtls_conn.close_send_tx {
-            if let Err(e) = close_send_tx.send(DtlsServerClose) {
-                warn!("close send tx {conn_index} is closed before set to None: {e}");
-            }
-
-            dtls_conn.close_send_tx = None;
+    
+            dtls_conn.send_tx = None;    
         }
-
-        dtls_conn.send_tx = None;
     }
 
     pub fn disconnect_all(&mut self) {
@@ -687,12 +703,10 @@ impl DtlsServer {
     }
 
     fn close_acpt_loop(&mut self) {
-        let Some(ref close_acpt_tx) = self.close_acpt_tx else {
-            return;
-        };
-
-        if let Err(e) = close_acpt_tx.send(DtlsServerClose) {
-            warn!("close listener tx is closed before set to None: {e}");
+        if let Some(ref close_acpt_tx) = self.close_acpt_tx {
+            if let Err(e) = close_acpt_tx.send(DtlsServerClose) {
+                debug!("acpter loop looks already closed: {e}");
+            }
         }
 
         self.close_acpt_tx = None;

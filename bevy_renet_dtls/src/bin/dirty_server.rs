@@ -25,7 +25,6 @@ struct ServerHellooonCounter(u64);
 fn send_hellooon_system(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>,
-    // dtls_server: Res<DtlsServer>,
     mut counter: ResMut<ServerHellooonCounter>
 ) {
     let renet_len = renet_server.connected_clients();
@@ -94,7 +93,7 @@ fn handle_net_event(
                 // better way to get this specific error ??
                 if err.to_string()
                 .ends_with("Alert is Fatal or Close Notify") {
-                    warn!("client {conn_index:?} disconnected: {err}");
+                    info!("client {conn_index:?} disconnected: {err}");
                 } else {
                     error!("{err}: disconnecting");
                 }
