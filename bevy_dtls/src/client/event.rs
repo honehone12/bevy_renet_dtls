@@ -10,7 +10,8 @@ pub enum DtlsClientEvent {
     },
     Error {
         err: anyhow::Error
-    }
+    },
+    ConnClosed
 }
 
 pub fn timeout_event_system(
@@ -37,18 +38,17 @@ pub fn health_event_system(
     mut dtls_events: EventWriter<DtlsClientEvent>
 ) {
     let health = dtls_client.health_check();
-    if let Some(r) = health.sender {
-        if let Err(e) = r {
-            dtls_events.send(DtlsClientEvent::Error { 
-                err: anyhow!("error from sender: {e}")
-            });
-        }
+    if let Some(Err(e)) = health.sender {
+        dtls_events.send(DtlsClientEvent::Error { 
+            err: anyhow!("error from sender: {e}")
+        });
     }
-    if let Some(r) = health.recver {
-        if let Err(e) = r {
-            dtls_events.send(DtlsClientEvent::Error { 
-                err: anyhow!("error from recver: {e}")
-            });
-        }
+    if let Some(Err(e)) = health.recver {
+        dtls_events.send(DtlsClientEvent::Error { 
+            err: anyhow!("error from recver: {e}")
+        });
+    }
+    if health.closed {
+        dtls_events.send(DtlsClientEvent::ConnClosed);
     }
 }

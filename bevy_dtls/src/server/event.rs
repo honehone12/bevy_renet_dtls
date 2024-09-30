@@ -18,6 +18,9 @@ pub enum DtlsServerEvent {
     ConnError {
         conn_index: u64,
         err: anyhow::Error
+    },
+    ConnClosed {
+        conn_index: u64
     }
 }
 
@@ -70,6 +73,11 @@ pub fn health_event_system(
             errors.send(DtlsServerEvent::ConnError { 
                 conn_index: conn_health.conn_index.index(), 
                 err: anyhow!("error from recver: {e}")
+            });
+        }
+        if conn_health.closed {
+            errors.send(DtlsServerEvent::ConnClosed { 
+                conn_index: conn_health.conn_index.index() 
             });
         }
     }

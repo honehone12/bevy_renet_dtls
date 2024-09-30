@@ -71,7 +71,8 @@ struct DtlsServerClose;
 pub struct DtlsConnHealth {
     pub conn_index: ConnIndex,
     pub sender: Option<anyhow::Result<()>>,
-    pub recver: Option<anyhow::Result<()>>
+    pub recver: Option<anyhow::Result<()>>,
+    pub closed: bool
 }
 
 #[derive(Debug)]
@@ -828,18 +829,19 @@ impl DtlsServer {
                 None
             };
 
-            let is_closed = dtls_conn.is_running
+            let closed = dtls_conn.is_running
             && dtls_conn.send_handle.is_none()
             && dtls_conn.recv_handle.is_none();
         
-            if is_closed {
+            if closed {
                 w.remove(&idx);
             }
 
             conns_health.push(DtlsConnHealth{
                 conn_index: ConnIndex(idx),
                 sender: sender_health,
-                recver: recver_health
+                recver: recver_health,
+                closed
             });
         }
         conns_health

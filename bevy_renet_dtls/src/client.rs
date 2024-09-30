@@ -16,7 +16,7 @@ pub trait RenetClientDtlsExt {
         config: DtlsClientConfig
     ) -> anyhow::Result<()>;
 
-    fn close_dtls(
+    fn disconnect_dtls(
         &mut self,
         dtls_client: &mut DtlsClient
     );
@@ -36,7 +36,7 @@ impl RenetClientDtlsExt for RenetClient {
     }
 
     #[inline]
-    fn close_dtls(
+    fn disconnect_dtls(
         &mut self,
         dtls_client: &mut DtlsClient
     ) {

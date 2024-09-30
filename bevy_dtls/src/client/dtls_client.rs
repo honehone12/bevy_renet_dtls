@@ -57,7 +57,8 @@ impl DtlsClientConfig {
 
 pub struct DtlsClientHealth {
     pub sender: Option<anyhow::Result<()>>,
-    pub recver: Option<anyhow::Result<()>>
+    pub recver: Option<anyhow::Result<()>>,
+    pub closed: bool
 }
 
 pub enum DtlsClientTimeout {
@@ -320,11 +321,11 @@ impl DtlsClient {
     pub fn health_check(&mut self) -> DtlsClientHealth {
         let sender_health = self.health_check_send_loop();
         let recver_health = self.health_check_recv_loop();
-        let is_closed = self.is_running
+        let closed = self.is_running
         && self.send_handle.is_none()
         && self.recv_handle.is_none();
 
-        if is_closed {
+        if closed {
             self.conn = None;
             self.is_running = false;
         }
@@ -332,6 +333,7 @@ impl DtlsClient {
         DtlsClientHealth{
             sender: sender_health,
             recver: recver_health,
+            closed
         }
     }
 
