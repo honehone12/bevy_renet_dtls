@@ -8,6 +8,11 @@ popular(!?) demo with bevy_replicon & bevy_replicon_renet
 server:`cargo run --package replicon_demo -- server`  
 client: `cargo run --package replicon_demo -- client`  
 
+#### dirty server and client demo  
+client and server sequentially disconnecting and restarting each other  
+server:`cargo run --bin dirty_server`  
+client: `cargo run --bin dirty_client`  
+
 #### demo with bevy_renet
 simple messaging demo without higher level replication systems  
 server:`cargo run --bin reliable_server`  
