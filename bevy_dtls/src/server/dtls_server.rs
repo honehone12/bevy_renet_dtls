@@ -170,6 +170,7 @@ impl DtlsServerAcpter {
             debug!("conn from {addr} accepted");
         };
 
+        self.listener.close().await?;
         debug!("dtls server listener is closed");
         result
     }
@@ -312,7 +313,8 @@ impl DtlsServerSender {
                     match timeout(
                         self.timeout_secs(),
                         self.conn.send(&msg)
-                    ).await {
+                    )
+                    .await {
                         Ok(r) => {
                             match r {
                                 Ok(n) => trace!("sent {n} bytes to {:?}", self.conn_idx),
@@ -438,6 +440,7 @@ impl DtlsServer {
         .unwrap()
         .is_empty()        
         
+        // set closed by call ing close
         &&self.listener.is_none()
         && self.acpt_handle.is_none()
         && self.acpt_rx.is_none()
@@ -634,11 +637,12 @@ impl DtlsServer {
     }
 
     pub fn close(&mut self) {
-        let Some(l) = self.listener.take() else {
-            return;
-        };
+        self.close_acpt_loop();
 
-        _ = future::block_on(self.runtime.spawn(async move {l.close().await}));
+        self.recv_tx = None;
+        self.recv_rx = None;
+        self.timeout_tx = None;
+        self.timeout_rx = None;
     }
 
     fn start_listen(&mut self, config: DtlsServerConfig) 
@@ -696,6 +700,7 @@ impl DtlsServer {
         }
 
         let handle = self.acpt_handle.take()?;
+        self.listener = None;
         match future::block_on(handle) {
             Ok(r) => Some(r),
             Err(e) => Some(Err(anyhow!(e)))

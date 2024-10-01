@@ -53,18 +53,21 @@ fn recv_hellooon_system(mut renet_client: ResMut<RenetClient>) {
 }
 
 fn handle_net_event(
-    mut commands: Commands,
     mut renet_client: Option<ResMut<RenetClient>>,
     mut dtls_client: ResMut<DtlsClient>,
-    client_config: Res<ClientConfig>,
     mut dtls_events: EventReader<DtlsClientEvent>,
+    mut restart: ResMut<Restart>
 ) {
     for e in dtls_events.read() {
         match e {
-            DtlsClientEvent::SendTimeout { .. } => error!("sending timeout"),
+            DtlsClientEvent::SendTimeout { .. } => {
+                error!("sending timeout")
+            }
             DtlsClientEvent::Error { err } => {
                 if err.to_string()
-                .ends_with("Alert is Fatal or Close Notify") {
+                .ends_with("Alert is Fatal or Close Notify")
+                || err.to_string()
+                .ends_with("conn is closed") {
                     info!("server disconneted: {err}");
                 } else {
                     error!("{err:?}");
@@ -79,23 +82,43 @@ fn handle_net_event(
                 if let Some(ref mut renet) = renet_client {
                     renet.disconnect_dtls(&mut dtls_client);
                 }
-            
-                info!("restarting...");
-                // insert new renet client
-                let mut new_renet = RenetClient::new(ConnectionConfig::default());
-                if let Err(e) = new_renet.start_dtls(
-                    &mut dtls_client,
-                    client_config.0.clone()
-                ) {
-                    panic!("{e}");
-                }
-            
-                // overwrite with new client 
-                commands.insert_resource(new_renet);
+
+                restart.0 = true;
             }
         }
     }
 }
+
+fn handle_restart(
+    mut commands: Commands,
+    mut dtls_client: ResMut<DtlsClient>,
+    client_config: Res<ClientConfig>,
+    mut restart: ResMut<Restart>
+) {
+    if !restart.0 {
+        return;
+    }
+
+    if !dtls_client.is_closed() {
+        return;
+    }
+
+    info!("restarting...");
+    // will insert new renet client
+    let mut new_renet = RenetClient::new(ConnectionConfig::default());
+
+    if let Err(e) = new_renet.start_dtls(&mut dtls_client, client_config.0.clone()) {
+        warn!("{e}");
+        return;
+    }
+
+    // overwrite with new client 
+    commands.insert_resource(new_renet);
+    restart.0 = false;
+}
+
+#[derive(Resource)]
+struct Restart(bool);
 
 #[derive(Resource)]
 struct ClientConfig(DtlsClientConfig);
@@ -129,8 +152,10 @@ impl Plugin for ClientPlugin {
         app.insert_resource(client_config)
         .insert_resource(renet_client)
         .insert_resource(ClientHellooonCounter(0))
+        .insert_resource(Restart(false))
         .add_systems(Update, (
             handle_net_event,
+            handle_restart,
             send_hellooon_system
             .run_if(resource_exists::<RenetClient>),
             recv_hellooon_system
@@ -150,7 +175,7 @@ fn main() {
         }),
         RenetClientPlugin,
         RenetDtlsClientPlugin{
-            timeout_secs: 10,
+            timeout_secs: 5,
             buf_size: 1500
         }
     ))

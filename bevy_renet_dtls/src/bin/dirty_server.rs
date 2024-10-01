@@ -27,13 +27,7 @@ fn send_hellooon_system(
     mut dtls_server: ResMut<DtlsServer>,
     mut counter: ResMut<ServerHellooonCounter>
 ) {
-    let renet_len = renet_server.connected_clients();
-    let dtls_len = dtls_server.connected_clients();
-    
-    if renet_len != dtls_len {
-        info!("connected clients mismatch, renet: {renet_len}, dtls: {dtls_len}");
-    }
-    if renet_len == 0 {
+    if renet_server.connected_clients() == 0 {
         return;
     }
 
@@ -48,6 +42,8 @@ fn send_hellooon_system(
         // disconnect all
         renet_server.disconnect_all_dtls(&mut dtls_server);
         counter.0 = 0;
+        // close listener(accepter)
+        dtls_server.close();
     }
 }
 
@@ -72,6 +68,7 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
 fn handle_net_event(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>,
+    server_config: Res<ServerConfig>,
     mut dtls_events: EventReader<DtlsServerEvent>
 ) {
     for e in dtls_events.read() {
@@ -84,27 +81,43 @@ fn handle_net_event(
                 renet_server.disconnect_dtls(&mut dtls_server, *conn_index);
             }
             DtlsServerEvent::Error { err } => {
-                // i found duplicate binding error event after
-                // closing listener. i will try again later but
-                // all i can do for now is just panic
                 error!("{err}");
             }
             DtlsServerEvent::ConnError { conn_index, err } => {
                 // better way to get this specific error ??
                 if err.to_string()
-                .ends_with("Alert is Fatal or Close Notify") {
-                    info!("client {conn_index:?} disconnected: {err}");
+                .ends_with("Alert is Fatal or Close Notify")
+                || err.to_string()
+                .ends_with("conn is closed") {
+                    info!("client {conn_index} disconnected: {err}");
                 } else {
-                    error!("{err}: disconnecting");
+                    error!("client {conn_index} error: {err}: disconnecting");
                 }
                 renet_server.disconnect_dtls(&mut dtls_server, *conn_index);
             }
             DtlsServerEvent::ConnClosed { conn_index } => {
+                info!(
+                    "conn {conn_index} closed, current clients: {} (transport: {})",
+                    renet_server.connected_clients(),
+                    dtls_server.connected_clients()
+                );
+            }
+            DtlsServerEvent::ListenerClosed => {
+                info!("listener closed, restarting...");
 
+                assert!(dtls_server.is_closed());
+
+                // restart dtls server
+                if let Err(e) = dtls_server.start(server_config.0.clone()) {
+                    panic!("{e}");
+                }
             }
         }
     }
 }
+
+#[derive(Resource)]
+struct ServerConfig(DtlsServerConfig);
 
 struct ServerPlugin;
 
@@ -112,19 +125,23 @@ impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         let mut dtls_server = app.world_mut()
         .resource_mut::<DtlsServer>();
-        if let Err(e) = dtls_server.start(DtlsServerConfig{
+
+        let server_config = ServerConfig(DtlsServerConfig{
             listen_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
             listen_port: 4443,
             cert_option: ServerCertOption::Load { 
                 priv_key_path: "my_certificates/server.priv.pem", 
                 certificate_path: "my_certificates/server.pub.pem",
             }
-        }) {
+        });
+
+        if let Err(e) = dtls_server.start(server_config.0.clone()) {
             panic!("{e}");
         }
 
         let renet_server = RenetServer::new(ConnectionConfig::default());
-        app.insert_resource(renet_server)
+        app.insert_resource(server_config)
+        .insert_resource(renet_server)
         .insert_resource(ServerHellooonCounter(0))
         .add_systems(Update, (
             handle_net_event,

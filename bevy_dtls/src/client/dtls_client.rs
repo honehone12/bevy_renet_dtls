@@ -32,27 +32,32 @@ pub struct DtlsClientConfig {
 }
 
 impl DtlsClientConfig {
-    async fn connect(self) 
+    async fn connect(self, timeout_secs: u64) 
     -> anyhow::Result<Arc<impl Conn + Sync + Send>> {
-        let socket = TokioUdpSocket::bind(
-            (self.client_addr, self.client_port)
-        )
-        .await?;
-        socket.connect(
-            (self.server_addr, self.server_port)
-        )
-        .await?;
         debug!("connecting to {}", self.server_addr);
+        timeout(
+            Duration::from_secs(timeout_secs),
+            async {
+                let socket = TokioUdpSocket::bind(
+                    (self.client_addr, self.client_port)
+                )
+                .await?;
 
-        let dtls_conn = DTLSConn::new(
-            Arc::new(socket), 
-            self.cert_option.to_dtls_config()?, 
-            true, 
-            None
+                socket.connect((self.server_addr, self.server_port))
+                .await?;
+
+                let dtls_conn = DTLSConn::new(
+                    Arc::new(socket), 
+                    self.cert_option.to_dtls_config()?, 
+                    true, 
+                    None
+                )
+                .await?;
+        
+                Ok(Arc::new(dtls_conn))
+            }
         )
-        .await?;
-
-        Ok(Arc::new(dtls_conn))
+        .await?
     }
 }
 
@@ -113,7 +118,8 @@ impl DtlsClientSender {
                     match timeout(
                         self.timeout_secs(), 
                         self.conn.send(&msg)
-                    ).await {
+                    )
+                    .await {
                         Ok(r) => {
                             match r {
                                 Ok(n) => trace!("sent {n} bytes"),
@@ -353,7 +359,7 @@ impl DtlsClient {
     fn start_connect(&mut self, config: DtlsClientConfig) 
     -> anyhow::Result<()> {
         let conn = future::block_on(self.runtime.spawn(
-            config.connect()
+            config.connect(self.send_timeout_secs)
         ))??;
         self.conn = Some(conn);
         debug!("dtls client has connected");
