@@ -103,8 +103,12 @@ fn handle_net_event(
                 );
             }
             DtlsServerEvent::ListenerClosed => {
-                info!("listener closed, restarting...");
+                // this event can be emitted even while conns are alive 
+                // just make sure close all again before restart
+                dtls_server.disconnect_all();
                 dtls_server.close();
+
+                info!("listener is closed");
 
                 restart.0 = true;                
             }
@@ -124,6 +128,8 @@ fn handle_restart(
     if !dtls_server.is_closed() {
         return;
     }
+
+    info!("restarting...");
 
     if let Err(e) = dtls_server.start(server_config.0.clone()) {
         error!("{e}");
@@ -148,7 +154,7 @@ impl Plugin for ServerPlugin {
 
         let server_config = ServerConfig(DtlsServerConfig{
             listen_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-            listen_port: 4443,
+            listen_port: 44443,
             cert_option: ServerCertOption::Load { 
                 priv_key_path: "my_certificates/server.priv.pem", 
                 certificate_path: "my_certificates/server.pub.pem",
@@ -184,7 +190,7 @@ fn main() {
             Duration::from_secs_f32(1.0 / 30.0)
         )),
         LogPlugin{
-            level: Level::INFO,
+            level: Level::TRACE,
             ..default()
         },
         RenetServerPlugin,

@@ -78,7 +78,8 @@ fn handle_net_event(
                 }
             }
             DtlsClientEvent::ConnClosed => {
-                // this event will be emitted even before disconnect() is called
+                // this event can be emitted even before disconnect() is called
+                // just make sure close before restart
                 if let Some(ref mut renet) = renet_client {
                     renet.disconnect_dtls(&mut dtls_client);
                 }
@@ -133,7 +134,7 @@ impl Plugin for ClientPlugin {
 
         let client_config = ClientConfig(DtlsClientConfig{
             server_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-            server_port: 4443,
+            server_port: 44443,
             client_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
             client_port: 0,
             cert_option: ClientCertOption::Load { 
