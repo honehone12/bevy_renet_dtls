@@ -68,8 +68,8 @@ fn recv_hellooon_system(mut renet_server: ResMut<RenetServer>) {
 fn handle_net_event(
     mut renet_server: ResMut<RenetServer>,
     mut dtls_server: ResMut<DtlsServer>,
-    server_config: Res<ServerConfig>,
-    mut dtls_events: EventReader<DtlsServerEvent>
+    mut dtls_events: EventReader<DtlsServerEvent>,
+    mut restart: ResMut<Restart>
 ) {
     for e in dtls_events.read() {
         match e {
@@ -104,17 +104,37 @@ fn handle_net_event(
             }
             DtlsServerEvent::ListenerClosed => {
                 info!("listener closed, restarting...");
+                dtls_server.close();
 
-                assert!(dtls_server.is_closed());
-
-                // restart dtls server
-                if let Err(e) = dtls_server.start(server_config.0.clone()) {
-                    panic!("{e}");
-                }
+                restart.0 = true;                
             }
         }
     }
 }
+
+fn handle_restart(
+    mut dtls_server: ResMut<DtlsServer>,
+    server_config: Res<ServerConfig>,
+    mut restart: ResMut<Restart>
+) {
+    if !restart.0 {
+        return;
+    } 
+
+    if !dtls_server.is_closed() {
+        return;
+    }
+
+    if let Err(e) = dtls_server.start(server_config.0.clone()) {
+        error!("{e}");
+        return;
+    }
+
+    restart.0 = false;
+}
+
+#[derive(Resource)]
+struct Restart(bool);
 
 #[derive(Resource)]
 struct ServerConfig(DtlsServerConfig);
@@ -142,9 +162,11 @@ impl Plugin for ServerPlugin {
         let renet_server = RenetServer::new(ConnectionConfig::default());
         app.insert_resource(server_config)
         .insert_resource(renet_server)
+        .insert_resource(Restart(false))
         .insert_resource(ServerHellooonCounter(0))
         .add_systems(Update, (
             handle_net_event,
+            handle_restart,
             send_hellooon_system
             .run_if(resource_exists::<RenetServer>),
             recv_hellooon_system
