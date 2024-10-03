@@ -378,7 +378,7 @@ impl DtlsClient {
             sender
         ) = DtlsClientSender::new(
             match self.conn {
-                Some(ref c) => c.clone(),
+                Some(ref c) => Arc::clone(c),
                 None => bail!("conn is none")
             },
             self.send_timeout_secs,
@@ -431,7 +431,7 @@ impl DtlsClient {
         
         let (recv_rx, close_tx, recver) = DtlsClientRecver::new(
             match self.conn {
-                Some(ref c) => c.clone(),
+                Some(ref c) => Arc::clone(c),
                 None => bail!("dtls conn is None")
             },
             self.recv_buf_size

@@ -37,7 +37,7 @@ fn send_hellooon_system(
     counter.0 += 1;
     debug!("broadcasted: {}", counter.0);
 
-    if counter.0 % 10 == 0 {
+    if counter.0 % 100 == 0 {
         info!("disconnecting all...");
         // disconnect all
         renet_server.disconnect_all_dtls(&mut dtls_server);

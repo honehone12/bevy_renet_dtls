@@ -675,10 +675,10 @@ impl DtlsServer {
         ) = DtlsServerAcpter::new(
             self.max_clients,
             match self.listener {
-                Some(ref l) => l.clone(),
+                Some(ref l) => Arc::clone(l),
                 None => bail!("listener is None")
             }, 
-            self.conn_map.clone()
+            Arc::clone(&self.conn_map)
         );
         
         self.acpt_rx = Some(acpt_rx);
@@ -732,7 +732,7 @@ impl DtlsServer {
 
         let (close_tx, recver) = DtlsServerRecver::new(
             conn_idx, 
-            dtls_conn.conn.clone(), 
+            Arc::clone(&dtls_conn.conn), 
             self.recv_buf_size, 
             self.recv_timeout_secs, 
             match self.recv_tx {
@@ -769,7 +769,7 @@ impl DtlsServer {
 
         let (send_tx, close_tx, sender) = DtlsServerSender::new(
             conn_idx, 
-            dtls_conn.conn.clone(), 
+            Arc::clone(&dtls_conn.conn), 
             self.send_timeout_secs,
             match self.timeout_tx {
                 Some(ref tx) => tx.clone(),
